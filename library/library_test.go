@@ -105,6 +105,22 @@ func TestMergeChapters(t *testing.T) {
 	}
 }
 
+func TestApplySourcePriorityToChapters(t *testing.T) {
+	ch := func(id, src string, prio int, n float64) *Chapter {
+		return &Chapter{ID: id, SourceID: src, SourceName: src + " (EN)", Priority: prio, Number: n, PageCount: 10}
+	}
+	all := []*Chapter{ch("a1", "A", 0, 1), ch("b1", "B", 1, 1)}
+	ApplySourcePriorityToChapters(all, []string{"B", "A"})
+	m := MergeChapters(all)
+	if m[0].ID != "b1" {
+		t.Fatalf("expected B to win after series override, got %s", m[0].ID)
+	}
+	ApplySourcePriorityToChapters(all, nil) // empty list must not wipe existing ranks
+	if all[0].Priority != 1 || all[1].Priority != 0 {
+		t.Fatalf("empty list should leave priorities alone, got %d/%d", all[0].Priority, all[1].Priority)
+	}
+}
+
 func TestUnderRoot(t *testing.T) {
 	root := t.TempDir()
 	if !underRoot(root, filepath.Join(root, "a", "b.cbz")) {

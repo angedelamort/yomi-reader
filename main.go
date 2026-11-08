@@ -75,6 +75,9 @@ func main() {
 			log.Fatalf("mock user: %v", err)
 		}
 		log.Printf("auth: mock provider (user=%q admin=%v)", cfg.MockUser, cfg.MockAdmin)
+	case "plex":
+		provider = auth.NewPlexProvider("Yomi Reader", cfg.PlexMachineID, cfg.PublicBaseURL, secureCookies)
+		log.Printf("auth: plex provider (machine=%s)", cfg.PlexMachineID)
 	default:
 		local := auth.NewLocalProvider(store)
 		provider = local

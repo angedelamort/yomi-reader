@@ -384,6 +384,16 @@
       }, field(t('username'), user), field(t('password'), pass), err, btn);
       box.appendChild(form);
       setTimeout(function () { user.focus(); }, 60);
+    } else if (info.provider === 'plex') {
+      err.id = 'login-error';
+      var plexLabel = h('span', { id: 'plex-login-label' }, t('sign_in_plex'));
+      var plexBtn = h('button', { id: 'plex-login-btn', class: 'btn primary wide', type: 'button' }, plexLabel);
+      box.appendChild(h('div', { class: 'login-form' }, plexBtn, err));
+      if (window.YomiPlex && typeof window.YomiPlex.bind === 'function') {
+        window.YomiPlex.bind(plexBtn, plexLabel, err);
+      } else {
+        plexBtn.addEventListener('click', function () { location.href = '/auth/login'; });
+      }
     } else {
       box.appendChild(h('div', { class: 'login-form' },
         h('a', { class: 'btn primary wide', href: '/auth/login' }, t('sign_in_sso'))));
@@ -610,7 +620,7 @@
       clear(favBtn).append(icon('heart'), h('span', null, d.favorite ? t('favorited') : t('favorite')));
     }
     favBtn = h('button', {
-      type: 'button', class: 'btn fav', onclick: async function () {
+      type: 'button', class: 'btn lg fav', onclick: async function () {
         var want = !d.favorite;
         d.favorite = want; paintFav();
         try { await api('/api/favorites/' + enc(id), { method: want ? 'PUT' : 'DELETE' }); }
@@ -631,7 +641,7 @@
         resumeBox.appendChild(h('a', { class: 'btn primary lg', href: '#/read/' + enc(first) }, icon('play'), t('start_reading')));
       }
       if (d.progress) resumeBox.appendChild(h('button', {
-        class: 'btn', type: 'button', onclick: async function () {
+        class: 'btn lg', type: 'button', onclick: async function () {
           try { await api('/api/progress/' + enc(id), { method: 'DELETE' }); d.progress = null; d.resume = null; paintCta(); paintList(); toast(t('marked_unread')); } catch (e) { errToast(e); }
         }
       }, t('mark_unread')));
@@ -679,14 +689,14 @@
     if (S.me && S.me.isAdmin) {
       coverWrap.appendChild(h('button', {
         type: 'button', class: 'cover-edit', 'aria-label': t('change_cover'), title: t('change_cover'),
-        onclick: function () { coverDialog(d, chapters); }
+        onclick: function () { editDialog(d, chapters, { tab: 'cover' }); }
       }, icon('edit', 'xs'), h('span', null, t('change_cover'))));
     }
 
     var adminBtns = S.me && S.me.isAdmin ? h('button', {
-      class: 'btn', type: 'button',
-      onclick: function () { metaDialog(d); }
-    }, icon('edit', 'xs'), t('edit_metadata')) : null;
+      class: 'btn lg', type: 'button',
+      onclick: function () { editDialog(d, chapters); }
+    }, icon('edit', 'xs'), t('edit')) : null;
 
     var info = h('div', { class: 'info' },
       h('h1', { class: 'display series-title' }, d.title),
@@ -719,82 +729,50 @@
     ctx.onCleanup(function () { document.title = 'Yomi'; });
   }
 
-  function coverDialog(series, chapters) {
-    var dlg = h('dialog', { class: 'dlg cover-dlg', 'aria-label': t('change_cover') });
-    var status = h('p', { class: 'muted cover-hint' }, t('cover_pick_hint'));
-    var busy = false;
-    async function apply(body, isForm) {
-      if (busy) return;
-      busy = true;
-      status.textContent = t('cover_uploading');
-      try {
-        if (isForm) {
-          var r = await fetch('/api/admin/series/' + enc(series.id) + '/cover', { method: 'PUT', credentials: 'same-origin', body: body });
-          var ct = r.headers.get('content-type') || '';
-          var res = ct.indexOf('json') >= 0 ? await r.json() : await r.text();
-          if (!r.ok) throw new Error((res && res.error) || r.statusText);
-        } else {
-          await api('/api/admin/series/' + enc(series.id) + '/cover', { method: 'PUT', json: body });
-        }
-        toast(t('cover_saved'));
-        dlg.close();
-        // Force a series re-render; updatedAt is bumped server-side so cover URLs cache-bust.
-        var next = '#/series/' + enc(series.id) + '?_=' + Date.now();
-        if (location.hash === next) route();
-        else location.hash = next;
-      } catch (e) { errToast(e); status.textContent = t('cover_pick_hint'); busy = false; }
-    }
-    var fileIn = h('input', { type: 'file', accept: 'image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif', hidden: true });
-    fileIn.addEventListener('change', function () {
-      if (!fileIn.files || !fileIn.files[0]) return;
-      var fd = new FormData();
-      fd.append('file', fileIn.files[0]);
-      apply(fd, true);
-    });
-    var grid = h('div', { class: 'cover-grid' });
-    (chapters || []).slice(0, 24).forEach(function (c) {
-      var label = c.number >= 0 ? t('ch_short', { n: fmtNum(c.number) }) : (c.title || '—');
-      var thumb = h('button', {
-        type: 'button', class: 'cover-cand', title: label,
-        onclick: function () {
-          if (thumb.classList.contains('broken') || thumb.disabled) {
-            toast(t('cover_chapter_bad'), 'err');
-            return;
-          }
-          apply({ chapterId: c.id });
-        }
-      },
-        h('img', { src: '/api/chapters/' + enc(c.id) + '/page/0', alt: '', loading: 'lazy', decoding: 'async' }),
-        h('span', null, label));
-      thumb.querySelector('img').addEventListener('error', function () {
-        thumb.classList.add('broken');
-        thumb.disabled = true;
-        thumb.title = t('cover_chapter_bad');
-      });
-      grid.appendChild(thumb);
-    });
-    dlg.append(
-      h('div', { class: 'dlg-head' }, h('h3', { class: 'display' }, t('change_cover')), iconBtn('x', t('close'), function () { dlg.close(); })),
-      h('div', { class: 'dlg-body' },
-        status,
-        h('div', { class: 'row cover-actions' },
-          h('button', { class: 'btn', type: 'button', onclick: function () { fileIn.click(); } }, icon('folder', 'xs'), t('cover_upload')),
-          h('button', { class: 'btn', type: 'button', onclick: function () { apply({ auto: true }); } }, icon('refresh', 'xs'), t('cover_auto'))),
-        fileIn,
-        (chapters || []).length ? h('h4', { class: 'lbl' }, t('cover_from_chapter')) : null,
-        grid),
-      h('div', { class: 'dlg-foot' }, h('button', { class: 'btn', type: 'button', onclick: function () { dlg.close(); } }, t('cancel'))));
-    dlg.addEventListener('close', function () { dlg.remove(); });
-    document.body.appendChild(dlg);
-    dlg.showModal();
-  }
-
   function splitList(s) {
     return String(s || '').split(/[,;]+/).map(function (x) { return x.trim(); }).filter(Boolean);
   }
 
-  function metaDialog(series) {
-    var dlg = h('dialog', { class: 'dlg meta-dlg', 'aria-label': t('edit_metadata') });
+  function editDialog(series, chapters, opts) {
+    opts = opts || {};
+    var details = (series.sourceDetails || []).slice();
+    var tabs = ['metadata', 'cover', 'sources'];
+    var tab = opts.tab && tabs.indexOf(opts.tab) >= 0 ? opts.tab : 'metadata';
+
+    var dlg = h('dialog', { class: 'dlg edit-dlg', 'aria-label': t('edit') });
+    var panel = h('div', { class: 'edit-panel' });
+    var foot = h('div', { class: 'dlg-foot' });
+    var err = h('p', { class: 'form-err', hidden: true });
+    var nav = h('nav', { class: 'edit-nav', 'aria-label': t('edit') });
+
+    async function reloadSeries() {
+      S.meta = null;
+      S.chCache = {};
+      var next = '#/series/' + enc(series.id) + '?_=' + Date.now();
+      if (location.hash === next) route();
+      else location.hash = next;
+    }
+
+    function setTab(next) {
+      tab = next;
+      Array.prototype.forEach.call(nav.children, function (b) {
+        var on = b.getAttribute('data-tab') === tab;
+        b.classList.toggle('on', on);
+        if (on) b.setAttribute('aria-current', 'page');
+        else b.removeAttribute('aria-current');
+      });
+      paintPanel();
+    }
+
+    tabs.forEach(function (k) {
+      nav.appendChild(h('button', {
+        type: 'button', class: k === tab ? 'on' : '', 'data-tab': k,
+        'aria-current': k === tab ? 'page' : null,
+        onclick: function () { setTab(k); }
+      }, t('edit_tab_' + k)));
+    });
+
+    /* ---- metadata ---- */
     var titleIn = h('input', { type: 'text', required: true, value: series.title || '', autocomplete: 'off' });
     var authorsIn = h('input', { type: 'text', value: series.authors || '', autocomplete: 'off' });
     var statusKnown = ['Ongoing', 'Completed', 'Hiatus', 'Cancelled'];
@@ -817,39 +795,190 @@
         return h('option', { value: a }, a + ' — ' + t('age_desc_' + a));
       }));
     ageIn.value = series.ageLocked ? (series.ageRating || 'T') : 'auto';
-    var err = h('p', { class: 'form-err', hidden: true });
-    async function reloadSeries() {
-      S.meta = null;
-      var next = '#/series/' + enc(series.id) + '?_=' + Date.now();
-      if (location.hash === next) route();
-      else location.hash = next;
+
+    async function saveMeta() {
+      err.hidden = true;
+      var body = {
+        title: titleIn.value.trim(),
+        authors: authorsIn.value.trim(),
+        status: statusIn.value,
+        year: yearIn.value === '' ? 0 : parseInt(yearIn.value, 10) || 0,
+        genres: splitList(genresIn.value),
+        tags: splitList(tagsIn.value),
+        summary: summaryIn.value,
+        ageRating: ageIn.value,
+        metaLocked: true
+      };
+      if (!body.title) { err.textContent = t('title_required'); err.hidden = false; return; }
+      try {
+        await api('/api/admin/series/' + enc(series.id), { method: 'PUT', json: body });
+        toast(t('saved'));
+        dlg.close();
+        await reloadSeries();
+      } catch (ex) { err.textContent = ex.message; err.hidden = false; }
     }
-    var form = h('form', {
-      onsubmit: async function (e) {
-        e.preventDefault();
-        err.hidden = true;
-        var body = {
-          title: titleIn.value.trim(),
-          authors: authorsIn.value.trim(),
-          status: statusIn.value,
-          year: yearIn.value === '' ? 0 : parseInt(yearIn.value, 10) || 0,
-          genres: splitList(genresIn.value),
-          tags: splitList(tagsIn.value),
-          summary: summaryIn.value,
-          ageRating: ageIn.value,
-          metaLocked: true
-        };
-        if (!body.title) { err.textContent = t('title_required'); err.hidden = false; return; }
-        try {
-          await api('/api/admin/series/' + enc(series.id), { method: 'PUT', json: body });
-          toast(t('saved'));
-          dlg.close();
-          await reloadSeries();
-        } catch (ex) { err.textContent = ex.message; err.hidden = false; }
+
+    /* ---- cover ---- */
+    var coverStatus = h('p', { class: 'muted cover-hint' }, t('cover_pick_hint'));
+    var coverBusy = false;
+    async function applyCover(body, isForm) {
+      if (coverBusy) return;
+      coverBusy = true;
+      coverStatus.textContent = t('cover_uploading');
+      try {
+        if (isForm) {
+          var r = await fetch('/api/admin/series/' + enc(series.id) + '/cover', { method: 'PUT', credentials: 'same-origin', body: body });
+          var ct = r.headers.get('content-type') || '';
+          var res = ct.indexOf('json') >= 0 ? await r.json() : await r.text();
+          if (!r.ok) throw new Error((res && res.error) || r.statusText);
+        } else {
+          await api('/api/admin/series/' + enc(series.id) + '/cover', { method: 'PUT', json: body });
+        }
+        toast(t('cover_saved'));
+        dlg.close();
+        await reloadSeries();
+      } catch (e) { errToast(e); coverStatus.textContent = t('cover_pick_hint'); coverBusy = false; }
+    }
+    var fileIn = h('input', { type: 'file', accept: 'image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif', hidden: true });
+    fileIn.addEventListener('change', function () {
+      if (!fileIn.files || !fileIn.files[0]) return;
+      var fd = new FormData();
+      fd.append('file', fileIn.files[0]);
+      applyCover(fd, true);
+    });
+    var coverGrid = h('div', { class: 'cover-grid' });
+    (chapters || []).slice(0, 24).forEach(function (c) {
+      var label = c.number >= 0 ? t('ch_short', { n: fmtNum(c.number) }) : (c.title || '—');
+      var thumb = h('button', {
+        type: 'button', class: 'cover-cand', title: label,
+        onclick: function () {
+          if (thumb.classList.contains('broken') || thumb.disabled) {
+            toast(t('cover_chapter_bad'), 'err');
+            return;
+          }
+          applyCover({ chapterId: c.id });
+        }
+      },
+        h('img', { src: '/api/chapters/' + enc(c.id) + '/page/0', alt: '', loading: 'lazy', decoding: 'async' }),
+        h('span', null, label));
+      thumb.querySelector('img').addEventListener('error', function () {
+        thumb.classList.add('broken');
+        thumb.disabled = true;
+        thumb.title = t('cover_chapter_bad');
+      });
+      coverGrid.appendChild(thumb);
+    });
+
+    /* ---- sources ---- */
+    function orderedSources() {
+      var custom = (series.sourcePriority || []).slice();
+      var byName = {};
+      details.forEach(function (s) { byName[s.name.toLowerCase()] = s; });
+      var out = [];
+      var seen = {};
+      custom.forEach(function (name) {
+        var key = name.toLowerCase();
+        var hit = byName[key] || details.find(function (s) {
+          return s.name.toLowerCase().indexOf(key) === 0 || key.indexOf(s.name.toLowerCase().split(' (')[0]) === 0;
+        });
+        if (hit && !seen[hit.id]) { seen[hit.id] = 1; out.push(hit); }
+      });
+      details.forEach(function (s) { if (!seen[s.id]) out.push(s); });
+      return out;
+    }
+    var multiSrc = details.length > 1;
+    var srcOrder = orderedSources();
+    var srcList = h('ol', { class: 'src-prio-list' });
+    var srcHint = h('p', { class: 'muted' }, !details.length ? t('no_sources')
+      : !multiSrc ? t('series_source_single_hint')
+      : (series.sourcePriority && series.sourcePriority.length)
+        ? t('series_source_priority_hint')
+        : t('series_source_priority_global'));
+
+    function paintSrcList() {
+      clear(srcList);
+      srcOrder.forEach(function (s, i) {
+        var acts = null;
+        if (multiSrc) {
+          var up = h('button', {
+            type: 'button', class: 'btn sm icon-only', disabled: i === 0, title: t('move_up'),
+            'aria-label': t('move_up'),
+            onclick: function () {
+              if (i === 0) return;
+              var tmp = srcOrder[i - 1]; srcOrder[i - 1] = srcOrder[i]; srcOrder[i] = tmp;
+              paintSrcList();
+            }
+          }, icon('up', 'xs'));
+          var down = h('button', {
+            type: 'button', class: 'btn sm icon-only', disabled: i === srcOrder.length - 1, title: t('move_down'),
+            'aria-label': t('move_down'),
+            onclick: function () {
+              if (i >= srcOrder.length - 1) return;
+              var tmp = srcOrder[i + 1]; srcOrder[i + 1] = srcOrder[i]; srcOrder[i] = tmp;
+              paintSrcList();
+            }
+          }, icon('down', 'xs'));
+          acts = h('span', { class: 'src-prio-acts' }, up, down);
+        }
+        srcList.appendChild(h('li', { class: multiSrc && i === 0 ? 'best' : '' },
+          multiSrc ? h('span', { class: 'src-prio-rank' }, String(i + 1)) : null,
+          h('span', { class: 'src-prio-name' }, s.name,
+            h('em', null, t('n_chapters', { n: s.chapterCount }, s.chapterCount))),
+          acts));
+      });
+    }
+    paintSrcList();
+
+    async function saveSources(clearCustom) {
+      err.hidden = true;
+      var body = { sourcePriority: clearCustom ? [] : srcOrder.map(function (s) { return s.name; }) };
+      try {
+        await api('/api/admin/series/' + enc(series.id), { method: 'PUT', json: body });
+        toast(t('saved'));
+        dlg.close();
+        await reloadSeries();
+      } catch (ex) { err.textContent = ex.message; err.hidden = false; }
+    }
+
+    function fill(el) {
+      clear(el);
+      for (var i = 1; i < arguments.length; i++) add(el, arguments[i]);
+    }
+
+    function paintPanel() {
+      err.hidden = true;
+      if (tab === 'cover') {
+        fill(panel,
+          coverStatus,
+          h('div', { class: 'row cover-actions' },
+            h('button', { class: 'btn', type: 'button', onclick: function () { fileIn.click(); } }, icon('folder', 'xs'), t('cover_upload')),
+            h('button', { class: 'btn', type: 'button', onclick: function () { applyCover({ auto: true }); } }, icon('refresh', 'xs'), t('cover_auto'))),
+          fileIn,
+          (chapters || []).length ? h('h4', { class: 'lbl' }, t('cover_from_chapter')) : null,
+          coverGrid);
+        fill(foot, h('button', { class: 'btn', type: 'button', onclick: function () { dlg.close(); } }, t('cancel')));
+        return;
       }
-    },
-      h('div', { class: 'dlg-head' }, h('h3', { class: 'display' }, t('edit_metadata')), iconBtn('x', t('close'), function () { dlg.close(); })),
-      h('div', { class: 'dlg-body' },
+      if (tab === 'sources') {
+        fill(panel,
+          h('h4', { class: 'lbl' }, multiSrc ? t('source_priority') : t('sources')),
+          srcHint,
+          details.length ? srcList : null,
+          err);
+        if (!multiSrc) {
+          fill(foot, h('button', { class: 'btn', type: 'button', onclick: function () { dlg.close(); } }, t('close')));
+          return;
+        }
+        fill(foot,
+          (series.sourcePriority && series.sourcePriority.length) ? h('button', {
+            class: 'btn meta-unlock-btn', type: 'button',
+            onclick: function () { saveSources(true); }
+          }, t('source_priority_reset')) : null,
+          h('button', { class: 'btn', type: 'button', onclick: function () { dlg.close(); } }, t('cancel')),
+          h('button', { class: 'btn primary', type: 'button', onclick: function () { saveSources(false); } }, t('save')));
+        return;
+      }
+      fill(panel,
         field(t('series_title'), titleIn),
         field(t('authors'), authorsIn),
         h('div', { class: 'meta-grid' },
@@ -860,8 +989,8 @@
         field(t('tags'), tagsIn, t('list_hint')),
         field(t('summary'), summaryIn),
         series.metaLocked ? h('p', { class: 'muted meta-unlock-hint' }, t('meta_locked_hint')) : null,
-        err),
-      h('div', { class: 'dlg-foot' },
+        err);
+      fill(foot,
         series.metaLocked ? h('button', {
           class: 'btn meta-unlock-btn', type: 'button',
           onclick: async function () {
@@ -874,12 +1003,18 @@
           }
         }, t('meta_unlock')) : null,
         h('button', { class: 'btn', type: 'button', onclick: function () { dlg.close(); } }, t('cancel')),
-        h('button', { class: 'btn primary', type: 'submit' }, t('save'))));
-    dlg.appendChild(form);
+        h('button', { class: 'btn primary', type: 'button', onclick: saveMeta }, t('save')));
+      if (tab === 'metadata') titleIn.focus();
+    }
+
+    fill(dlg,
+      h('div', { class: 'dlg-head' }, h('h3', { class: 'display' }, t('edit')), iconBtn('x', t('close'), function () { dlg.close(); })),
+      h('div', { class: 'edit-layout' }, nav, panel),
+      foot);
     dlg.addEventListener('close', function () { dlg.remove(); });
     document.body.appendChild(dlg);
     dlg.showModal();
-    titleIn.focus();
+    paintPanel();
   }
 
   /* ================================================================
@@ -913,7 +1048,6 @@
     var mode = (ser && ser.readerMode) || 'webtoon';
     if (MODES.indexOf(mode) < 0) mode = 'webtoon';
     var idx = 0, ratio = 0, completed = false;
-    var fav = !!(ser && ser.favorite);
     var userMoved = false, chromeOn = true, hideTimer = 0, destroyed = false;
     var restoreUntil = 0, restoreIdx = 0, restoreRatio = 0;
     var els = [], io = null, lastTop = 0, ticking = false, prefetched = {}, keep = [];
@@ -938,7 +1072,6 @@
     var pill = h('div', { class: 'rd-pill', 'aria-hidden': 'true' });
     var slider = h('input', { type: 'range', class: 'rd-slider', min: 1, max: Math.max(1, n), value: idx + 1, 'aria-label': t('page') });
     var posLbl = h('span', { class: 'rd-pos' });
-    var favBtn = h('button', { class: 'ibtn', type: 'button', onclick: toggleFav }, icon('heart'));
     var prevBtn = iconBtn('left', t('prev_chapter'), function () { goChapter(ch.prev, true); });
     var nextBtn = iconBtn('right', t('next_chapter'), function () { goNext(); });
     if (!ch.prev) prevBtn.disabled = true;
@@ -965,13 +1098,13 @@
       MODES.map(function (m) { return h('option', { value: m, selected: m === mode }, t('mode_' + m)); }));
     modeSel.addEventListener('change', function () { modeSel.blur(); setMode(modeSel.value); });
 
+    // Favorites are series-only (toggle on the series page / Home shelf), not per-chapter.
     var top = h('div', { class: 'rd-top' },
       iconBtn('back', t('back_to_series'), backToSeries),
       h('div', { class: 'rd-title' },
         h('strong', null, ch.seriesTitle || ''),
         h('span', null, [chLabel, chTitle].filter(Boolean).join(' · ') || ch.title)),
       h('div', { class: 'rd-tools' }, chSel, srcSel, isPdf ? null : modeSel,
-        favBtn,
         iconBtn('full', t('fullscreen'), toggleFullscreen, 'hide-small')));
 
     var bot = h('div', { class: 'rd-bot' }, prevBtn,
@@ -980,18 +1113,6 @@
     var rd = h('div', { class: 'rd' + (isPdf ? ' pdf' : '') }, top, body, bot, pill);
     clear(root).appendChild(rd);
 
-    function paintFav() {
-      favBtn.classList.toggle('on', fav);
-      favBtn.setAttribute('aria-pressed', fav ? 'true' : 'false');
-      favBtn.setAttribute('aria-label', fav ? t('unfavorite') : t('favorite'));
-      favBtn.title = favBtn.getAttribute('aria-label');
-    }
-    paintFav();
-    async function toggleFav() {
-      var want = !fav; fav = want; paintFav();
-      try { await api('/api/favorites/' + enc(seriesId), { method: want ? 'PUT' : 'DELETE' }); toast(want ? t('favorited') : t('unfavorite')); }
-      catch (e) { fav = !want; paintFav(); errToast(e); }
-    }
     function backToSeries() { location.hash = '#/series/' + enc(seriesId); }
     function toggleFullscreen() {
       if (document.fullscreenElement) document.exitFullscreen();
@@ -1789,6 +1910,18 @@
     window.addEventListener('hashchange', route);
     window.addEventListener('yr-lang', function () { document.documentElement.lang = S.lang; });
     route();
+    registerServiceWorker();
+  }
+
+  function registerServiceWorker() {
+    if (!('serviceWorker' in navigator)) return;
+    var go = function () {
+      navigator.serviceWorker.register('/sw.js').catch(function (err) {
+        console.warn('service worker registration failed', err);
+      });
+    };
+    if (document.readyState === 'complete') go();
+    else window.addEventListener('load', go);
   }
 
   boot();

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"mime"
 	"net"
 	"net/http"
 	"os"
@@ -16,6 +17,11 @@ import (
 	"yomi-reader/auth"
 	"yomi-reader/library"
 )
+
+func init() {
+	// Browsers expect the web app manifest MIME; some hosts omit .webmanifest.
+	_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
+}
 
 // Deps holds the wired dependencies a server needs.
 type Deps struct {
@@ -205,6 +211,32 @@ func NewMux(d Deps) *http.ServeMux {
 		d.Sessions.Clear(w)
 		http.Redirect(w, r, "/", http.StatusFound)
 	})
+
+	// --- Plex popup login (client-side PIN → token exchange) ---
+	if plex, ok := d.Provider.(*auth.PlexProvider); ok {
+		mux.HandleFunc("GET /api/auth/plex/config", func(w http.ResponseWriter, r *http.Request) {
+			writeJSONOK(w, plex.ClientConfig())
+		})
+		mux.HandleFunc("POST /api/auth/plex/exchange", func(w http.ResponseWriter, r *http.Request) {
+			var in struct {
+				Token string `json:"token"`
+			}
+			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&in); err != nil {
+				writeJSONErr(w, http.StatusBadRequest, "invalid JSON")
+				return
+			}
+			user, err := plex.ExchangeToken(in.Token)
+			if err != nil {
+				writeJSONErr(w, http.StatusUnauthorized, err.Error())
+				return
+			}
+			if err := finishLogin(w, d, user); err != nil {
+				writeJSONErr(w, http.StatusInternalServerError, "session error")
+				return
+			}
+			writeJSONOK(w, map[string]any{"ok": true, "user": user})
+		})
+	}
 
 	// --- Current user ---
 	mux.Handle("GET /api/me", auth_(lib.Me))

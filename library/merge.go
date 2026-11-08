@@ -9,6 +9,20 @@ import (
 // numKey converts a chapter number to a stable map key (3 decimal places).
 func numKey(n float64) int64 { return int64(math.Round(n * 1000)) }
 
+// ApplySourcePriorityToChapters remaps each chapter's Priority from the given
+// ordered source-name list (best first). An empty list leaves priorities alone
+// (global sources.priority ranks stay in effect).
+func ApplySourcePriorityToChapters(chs []*Chapter, list []string) {
+	if len(list) == 0 {
+		return
+	}
+	for _, c := range chs {
+		if c != nil {
+			c.Priority = priorityFor(list, c.SourceName)
+		}
+	}
+}
+
 // betterChapter reports whether a should be preferred over b: best source
 // priority first, then more pages (a truncated copy loses), then name/path for
 // determinism.

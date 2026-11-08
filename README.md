@@ -13,9 +13,15 @@ Vanilla SPA (no build step) with EN/FR:
 
 * **Home** — continue reading, favorites, recently added shelves
 * **Library** — cover grid, search, tags, source/age filters, sort, infinite scroll
-* **Series** — merged chapter list across sources (A then B fallback), resume, favorites
+* **Series** — merged chapter list across sources (A then B fallback), resume, **favorites** (series-only)
 * **Reader** — webtoon vertical scroll with page preload, plus LTR/RTL/vertical page modes; PDF embed
 * **Admin** — libraries + folder browser + scan, users/permissions/age caps, source priority, jobs
+* **PWA** — installable (`manifest.webmanifest` + service worker): app shell offline, cached covers,
+  recently viewed pages; install from the browser on phone/desktop (HTTPS or localhost)
+
+Auth: **local** (default), **plex** (plex.tv PIN popup, same pattern as plex-photo), or **mock** (dev).
+
+See [TODO.md](TODO.md) for planned work (new-chapter alerts, reading lists, metadata providers, …).
 
 ## Quick start
 
@@ -67,14 +73,16 @@ DSM share owner if needed.
 |---|---|---|
 | `DATA_PATH` | `./data` | SQLite DB (`yomi-reader.db`), `session.key`, `cache/covers/` |
 | `PORT` | `8098` | |
-| `AUTH_PROVIDER` | `local` | `local` (bcrypt) or `mock` |
+| `AUTH_PROVIDER` | `local` | `local` (bcrypt), `plex`, or `mock` |
 | `COOKIE_SECURE` | `false` | `true` only behind HTTPS |
 | `SESSION_SECRET` | auto | otherwise generated and stored in `DATA_PATH/session.key` |
-| `ADMIN_USER` / `ADMIN_PASS` | – | first admin; empty DB without them creates `admin`/`admin` |
+| `ADMIN_USER` / `ADMIN_PASS` | – | local provider: first admin; empty DB without them creates `admin`/`admin` |
+| `PLEX_MACHINE_ID` | – | **required** when `AUTH_PROVIDER=plex` (PMS machineIdentifier) |
+| `PUBLIC_BASE_URL` | – | optional; base URL for Plex redirect callback (`/auth/login`) |
 | `MOCK_USER` / `MOCK_ADMIN` | `dev` / `true` | mock provider identity |
 | `THUMB_WIDTH` | `300` | cover width (height = 1.5 x) |
 | `DEFAULT_LIBRARY_PATH` | – | auto-registered on first run; else `M:\books\suwayomi` if present |
-| `AUTOSCAN_WATCH` | `true` | fsnotify watcher (root/source/series dirs, 20 s debounce) |
+| `AUTOSCAN_WATCH` | `true` | fsnotify watcher (see Auto-scan below) |
 | `STATIC_DIR` | `static` | SPA directory; unknown paths fall back to `index.html` |
 | `PUID` / `PGID` | `1000` / `1000` | Docker only: ownership of `/data` (linuxserver-style) |
 | `TZ` | `America/Toronto` | timezone inside the container |
@@ -99,27 +107,35 @@ If `<root>/mangas` exists it is used, otherwise `<root>` itself is the mangas ro
 * Age rating (`E` < `T` < `M` < `X`): `X` for sources containing hentai/porn/nsfw, genres Adult/Smut/Hentai/Erotica,
   or when most files start with `# `; `M` for Ecchi/Seinen/Mature/Gore; default `T`; `E` for Kids/Children. ComicInfo
   `AgeRating` is honoured; an incremental scan never loosens an existing rating. Admins can edit metadata
-  (title, summary, authors, status, year, genres, tags, age) via **Edit metadata** on the series page /
+  (title, summary, authors, status, year, genres, tags, age, source priority) via **Edit** on the series page /
   `PUT /api/admin/series/{id}`; saving locks fields against ComicInfo fills (`metaLocked`).
 * Rescans are incremental (size + mtime), inspect archives concurrently, and are single-flight per library.
   Deletions only happen when the listing was complete. `.cbr/.rar/.cb7/.7z` are counted as unsupported and skipped.
+* **Auto-scan:** `AUTOSCAN_WATCH` (default on) watches library root, source, and series folders (fsnotify is not
+  recursive; chapter image folders are not watched). New chapter archives dropped into a series folder trigger a
+  rescan after a 20 s debounce. Pair it with Admin → `auto_scan_hours` (e.g. 6–12) as a safety net — fsnotify is
+  often unreliable on Docker binds, mapped drives, and network mounts. There is no user-facing “new chapter” alert
+  yet (watcher only updates the catalog); see [TODO.md](TODO.md).
 * Covers: first page of the lowest chapter, cropped to 2:3 (webtoon strips cropped at the top), generated in the
   background (and lazily on first request). PDF-only series get a placeholder. Admins can override a cover
   (upload, pick a chapter’s first page, or reset to auto) via `PUT /api/admin/series/{id}/cover`; overrides are
   locked against rescans (`coverLocked`).
 * Paths are always checked to stay under the library root before opening a chapter.
 
-**Merged chapters:** for each chapter number the copy from the best source wins (`sources.priority`, lower = better;
-ties: more pages). The priority list is the `source_priority` setting (CSV of source names, `MangaDex` matches
-`MangaDex (EN)`); changing it applies instantly, no rescan.
+**Merged chapters:** for each chapter number the copy from the best source wins (lower priority = better;
+ties: more pages). Prefer per-series order via **Edit → Sources** (`sourcePriority` on the series; only shown when
+a title has more than one source). The admin `source_priority` setting is the default for series without an override
+(CSV of source names, `MangaDex` matches `MangaDex (EN)`).
 
 ## API (JSON)
 
 Errors are `{"error": "..."}`. Ages/ratings use codes `E`, `T`, `M`, `X`.
 
-**Auth** – `GET /api/auth/info` → `{provider, authenticated, user}`; `POST /api/auth/login {username,password}`;
-`POST /api/auth/logout`; `GET /auth/login|/auth/callback|/auth/logout` (redirect flow, used by mock). Failed logins are
-throttled (8 / 10 min per IP+user).
+**Auth** – `GET /api/auth/info` → `{provider, authenticated, user}`; `POST /api/auth/login {username,password}`
+(local only); `POST /api/auth/logout`; `GET /auth/login|/auth/callback|/auth/logout` (redirect / mock / Plex
+fallback). Plex popup: `GET /api/auth/plex/config`, `POST /api/auth/plex/exchange {token}` — users with access to
+`PLEX_MACHINE_ID` may sign in; the Plex server **owner** is admin. Failed password logins are throttled
+(8 / 10 min per IP+user).
 
 **User** – `GET /api/me`; `GET|PUT /api/preferences` (free-form JSON object, e.g. `lang`); `GET /api/libraries`.
 
@@ -144,8 +160,8 @@ PDF chapters have `format: "pdf"` and one pseudo-page: embed `/api/chapters/{id}
 images (image-only EPUBs only).
 
 **Progress / favorites** – `GET|PUT|DELETE /api/progress/{seriesId}` (PUT body `{chapterId,pageIndex,scrollRatio,completed}`;
-response `{progress, resume}` where `resume` is the chapter/page to open), `GET /api/favorites`,
-`PUT|DELETE /api/favorites/{seriesId}`.
+response `{progress, resume}` where `resume` is the chapter/page to open). Favorites are **series-only**:
+`GET /api/favorites`, `PUT|DELETE /api/favorites/{seriesId}` (Home shelf + series page; not per-chapter).
 
 **Admin** (`isAdmin` only)
 * Libraries: `GET|POST /api/admin/libraries`, `PUT|DELETE /api/admin/libraries/{id}`,
@@ -158,7 +174,7 @@ response `{progress, resume}` where `resume` is the chapter/page to open), `GET 
   `default_reader_mode` (fallback when a series has no per-user mode yet),
   `random_refresh_minutes` ∈ 30|60|360|720|1440 (home Random lane stability; default 360 / 6h).
 * Also: `GET /api/admin/sources`, `GET /api/admin/jobs`,
-  `PUT /api/admin/series/{id}` (metadata + `ageRating` / `metaLocked`),
+  `PUT /api/admin/series/{id}` (metadata + `ageRating` / `metaLocked` / `sourcePriority`),
   `PUT /api/admin/series/{id}/cover` (multipart `file`, or JSON `{"chapterId"}` / `{"auto":true}`).
 
 **OPDS 1.2 (+ page streaming)** – `GET /opds`, `/opds/browse?q=&sort=&page=`, `/opds/series/{id}`, `/opds/search.xml`,
@@ -176,7 +192,20 @@ auth/               session cookies (yr_session), mock + local providers, middle
 library/            db, model, store, scanner, archive (cbz/zip/epub/pdf/folder), cover, merge,
                     handler (+ admin.go, opds.go), autoscan, comicinfo, util
 server/             routes, login rate limit, static SPA + fallback
-static/             SPA (index.html, app.js, style.css, i18n.js)
+static/             SPA (index.html, app.js, style.css, i18n.js, plex-login.js, sw.js, manifest, icons/)
 ```
+
+### Plex auth
+
+```bash
+AUTH_PROVIDER=plex PLEX_MACHINE_ID=yourMachineId go run .
+# or: docker compose -f docker-compose.yml -f docker-compose.plex.yml up -d
+```
+
+Sign-in uses a browser popup against plex.tv (no public callback URL required). Shared Plex users can
+log in; the server owner becomes Yomi admin. After first login, tune age caps / library ACL in Admin → Users.
+OPDS Basic auth needs a **local** password account — with Plex-only auth, use a session cookie in the client
+or keep a local admin for OPDS.
+
 
 `go test ./...` covers filename parsing, natural sort, merging, age rating, path confinement and archive reading.

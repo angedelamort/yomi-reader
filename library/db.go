@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS series (
   cover_rel        TEXT NOT NULL DEFAULT '',
   cover_locked     INTEGER NOT NULL DEFAULT 0,
   meta_locked      INTEGER NOT NULL DEFAULT 0,
+  source_priority  TEXT NOT NULL DEFAULT '', -- CSV of source names, best first; empty = global default
   chapter_count    INTEGER NOT NULL DEFAULT 0,
   added_at         INTEGER NOT NULL DEFAULT 0,
   updated_at       INTEGER NOT NULL DEFAULT 0,
@@ -195,7 +196,10 @@ func migrate(db *sql.DB) error {
 	if err := addColumnIfMissing(db, "series", "cover_locked", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
-	return addColumnIfMissing(db, "series", "meta_locked", "INTEGER NOT NULL DEFAULT 0")
+	if err := addColumnIfMissing(db, "series", "meta_locked", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	return addColumnIfMissing(db, "series", "source_priority", "TEXT NOT NULL DEFAULT ''")
 }
 
 func addColumnIfMissing(db *sql.DB, table, column, decl string) error {

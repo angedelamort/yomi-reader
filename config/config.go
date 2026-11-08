@@ -15,12 +15,16 @@ type Config struct {
 	Port          string
 	SessionSecret string
 
-	// AuthProvider selects the authentication backend: "local" or "mock".
+	// AuthProvider selects the authentication backend: "local", "plex", or "mock".
 	AuthProvider string
 
 	// CookieSecure sets the Secure flag on the session cookie. Keep it false
 	// when served over plain HTTP, browsers drop Secure cookies on http://.
 	CookieSecure bool
+
+	// Plex provider (AuthProvider == "plex").
+	PlexMachineID string
+	PublicBaseURL string
 
 	// Mock provider (AuthProvider == "mock").
 	MockUser  string
@@ -51,6 +55,8 @@ func Load() (*Config, error) {
 		SessionSecret:      os.Getenv("SESSION_SECRET"),
 		AuthProvider:       strings.ToLower(getEnv("AUTH_PROVIDER", "local")),
 		CookieSecure:       getEnvBool("COOKIE_SECURE", false),
+		PlexMachineID:      strings.TrimSpace(os.Getenv("PLEX_MACHINE_ID")),
+		PublicBaseURL:      strings.TrimRight(strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL")), "/"),
 		MockUser:           getEnv("MOCK_USER", "dev"),
 		MockAdmin:          getEnvBool("MOCK_ADMIN", true),
 		AdminUser:          strings.TrimSpace(os.Getenv("ADMIN_USER")),
@@ -66,8 +72,13 @@ func Load() (*Config, error) {
 	}
 	c.ThumbWidth = width
 
-	if c.AuthProvider != "local" && c.AuthProvider != "mock" {
-		return nil, fmt.Errorf("invalid AUTH_PROVIDER %q (expected \"local\" or \"mock\")", c.AuthProvider)
+	switch c.AuthProvider {
+	case "local", "plex", "mock":
+	default:
+		return nil, fmt.Errorf("invalid AUTH_PROVIDER %q (expected \"local\", \"plex\", or \"mock\")", c.AuthProvider)
+	}
+	if c.AuthProvider == "plex" && c.PlexMachineID == "" {
+		return nil, fmt.Errorf("PLEX_MACHINE_ID is required when AUTH_PROVIDER=plex")
 	}
 	if c.DataPath == "" {
 		return nil, fmt.Errorf("DATA_PATH is required")

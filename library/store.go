@@ -386,7 +386,7 @@ func (s *Store) SetUserLibraries(username string, libraryIDs []string) error {
 	return tx.Commit()
 }
 
-// UpsertExternalUser records a login from a passwordless provider (mock),
+// UpsertExternalUser records a login from a passwordless provider (mock/plex),
 // creating the user on first sight and refreshing email/admin flag after.
 func (s *Store) UpsertExternalUser(username, email string, isAdmin bool) error {
 	rating := RatingTeen
@@ -460,8 +460,8 @@ func boolInt(b bool) int {
 
 // seriesCols: the first placeholder is the username used for the favorite flag.
 const seriesCols = `s.id, s.library_id, s.title, s.sort_title, s.normalized_title, s.summary, s.authors,
-	s.status, s.year, s.age_rating, s.age_locked, s.genres, s.tags, s.cover_rel, s.cover_locked, s.meta_locked, s.chapter_count,
-	s.added_at, s.updated_at,
+	s.status, s.year, s.age_rating, s.age_locked, s.genres, s.tags, s.cover_rel, s.cover_locked, s.meta_locked,
+	s.source_priority, s.chapter_count, s.added_at, s.updated_at,
 	(SELECT group_concat(n, char(31)) FROM (
 		SELECT so.name AS n FROM series_locals sl JOIN sources so ON so.id = sl.source_id
 		WHERE sl.series_id = s.id GROUP BY so.name ORDER BY MIN(so.priority), so.name)),
@@ -470,12 +470,12 @@ const seriesCols = `s.id, s.library_id, s.title, s.sort_title, s.normalized_titl
 func scanSeries(sc interface{ Scan(...any) error }, extra ...any) (*Series, error) {
 	var se Series
 	var locked, coverLocked, metaLocked, fav int
-	var genres, tags string
+	var genres, tags, srcPrio string
 	var added, updated int64
 	var srcs sql.NullString
 	dest := []any{&se.ID, &se.LibraryID, &se.Title, &se.SortTitle, &se.NormalizedTitle, &se.Summary, &se.Authors,
-		&se.Status, &se.Year, &se.AgeRating, &locked, &genres, &tags, &se.CoverRel, &coverLocked, &metaLocked, &se.ChapterCount,
-		&added, &updated, &srcs, &fav}
+		&se.Status, &se.Year, &se.AgeRating, &locked, &genres, &tags, &se.CoverRel, &coverLocked, &metaLocked,
+		&srcPrio, &se.ChapterCount, &added, &updated, &srcs, &fav}
 	dest = append(dest, extra...)
 	if err := sc.Scan(dest...); err != nil {
 		return nil, err
@@ -485,6 +485,7 @@ func scanSeries(sc interface{ Scan(...any) error }, extra ...any) (*Series, erro
 	se.MetaLocked = metaLocked != 0
 	se.Genres = splitCSV(genres)
 	se.Tags = splitCSV(tags)
+	se.SourcePriority = splitCSV(srcPrio)
 	se.HasCover = se.CoverRel != ""
 	se.AddedAt = unixTime(added)
 	se.UpdatedAt = unixTime(updated)
@@ -839,27 +840,29 @@ func (s *Store) SetSeriesAgeRating(id, rating string, locked bool) error {
 }
 
 // SeriesMetaPatch is a partial admin update for series display metadata.
-// Nil pointer fields are left unchanged. Empty slices clear genres/tags.
+// Nil pointer fields are left unchanged. Empty slices clear genres/tags /
+// source priority (inherit global).
 type SeriesMetaPatch struct {
-	Title      *string
-	Summary    *string
-	Authors    *string
-	Status     *string
-	Year       *int
-	Genres     *[]string
-	Tags       *[]string
-	AgeRating  *string // "auto" unlocks; E/T/M/X sets and locks
-	MetaLocked *bool   // nil = lock when any text field is written
+	Title          *string
+	Summary        *string
+	Authors        *string
+	Status         *string
+	Year           *int
+	Genres         *[]string
+	Tags           *[]string
+	AgeRating      *string // "auto" unlocks; E/T/M/X sets and locks
+	MetaLocked     *bool   // nil = lock when any text field is written
+	SourcePriority *[]string
 }
 
 // UpdateSeriesMeta applies an admin metadata patch. Writing any text field
 // locks metadata against ComicInfo fills on rescan unless MetaLocked is set.
 func (s *Store) UpdateSeriesMeta(id string, p SeriesMetaPatch) error {
-	var title, summary, authors, status, genres, tags, age string
+	var title, summary, authors, status, genres, tags, age, srcPrio string
 	var year, ageLocked, metaLocked int
-	err := s.db.QueryRow(`SELECT title, summary, authors, status, year, genres, tags, age_rating, age_locked, meta_locked
+	err := s.db.QueryRow(`SELECT title, summary, authors, status, year, genres, tags, age_rating, age_locked, meta_locked, source_priority
 		FROM series WHERE id = ?`, id).
-		Scan(&title, &summary, &authors, &status, &year, &genres, &tags, &age, &ageLocked, &metaLocked)
+		Scan(&title, &summary, &authors, &status, &year, &genres, &tags, &age, &ageLocked, &metaLocked, &srcPrio)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
 	}
@@ -902,6 +905,9 @@ func (s *Store) UpdateSeriesMeta(id string, p SeriesMetaPatch) error {
 		tags = joinCSV(*p.Tags)
 		touchedMeta = true
 	}
+	if p.SourcePriority != nil {
+		srcPrio = joinCSV(*p.SourcePriority)
+	}
 	if p.MetaLocked != nil {
 		metaLocked = boolInt(*p.MetaLocked)
 	} else if touchedMeta {
@@ -923,8 +929,8 @@ func (s *Store) UpdateSeriesMeta(id string, p SeriesMetaPatch) error {
 	}
 
 	res, err := s.db.Exec(`UPDATE series SET title = ?, sort_title = ?, summary = ?, authors = ?, status = ?, year = ?,
-		genres = ?, tags = ?, age_rating = ?, age_locked = ?, meta_locked = ?, updated_at = ? WHERE id = ?`,
-		title, sortTitle(title), summary, authors, status, year, genres, tags, age, ageLocked, metaLocked, nowUnix(), id)
+		genres = ?, tags = ?, age_rating = ?, age_locked = ?, meta_locked = ?, source_priority = ?, updated_at = ? WHERE id = ?`,
+		title, sortTitle(title), summary, authors, status, year, genres, tags, age, ageLocked, metaLocked, srcPrio, nowUnix(), id)
 	if err != nil {
 		return err
 	}
@@ -991,7 +997,7 @@ func scanChapter(sc interface{ Scan(...any) error }, extra ...any) (*Chapter, er
 }
 
 // ListChapters returns every stored chapter of a series (all sources), ordered
-// by number then source priority.
+// by number then global source priority.
 func (s *Store) ListChapters(seriesID string) ([]*Chapter, error) {
 	rows, err := s.db.Query(`SELECT `+chapterCols+` FROM chapters c JOIN sources so ON so.id = c.source_id
 		WHERE c.series_id = ? ORDER BY c.number, so.priority, c.fs_path`, seriesID)
@@ -1008,6 +1014,35 @@ func (s *Store) ListChapters(seriesID string) ([]*Chapter, error) {
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+// SeriesSourcePriority returns the per-series priority override (best first),
+// or nil when the series inherits the global default.
+func (s *Store) SeriesSourcePriority(seriesID string) ([]string, error) {
+	var csv string
+	err := s.db.QueryRow(`SELECT source_priority FROM series WHERE id = ?`, seriesID).Scan(&csv)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return splitCSV(csv), nil
+}
+
+// ListChaptersEffective returns chapters with Priority remapped to the series
+// override when one is set; otherwise global sources.priority ranks apply.
+func (s *Store) ListChaptersEffective(seriesID string) ([]*Chapter, error) {
+	all, err := s.ListChapters(seriesID)
+	if err != nil {
+		return nil, err
+	}
+	list, err := s.SeriesSourcePriority(seriesID)
+	if err != nil {
+		return nil, err
+	}
+	ApplySourcePriorityToChapters(all, list)
+	return all, nil
 }
 
 const chapterRefSelect = `SELECT ` + chapterCols + `, s.library_id, l.root_path, s.age_rating
@@ -1031,20 +1066,17 @@ func (s *Store) GetChapterRef(id string) (*ChapterRef, error) {
 }
 
 // CoverChapter picks the chapter whose first page becomes the series cover:
-// the lowest numbered chapter, preferring the best source.
+// the lowest numbered chapter, preferring the best (series-effective) source.
 func (s *Store) CoverChapter(seriesID string) (*ChapterRef, error) {
-	var ref ChapterRef
-	row := s.db.QueryRow(chapterRefSelect+`WHERE c.series_id = ?
-		ORDER BY CASE WHEN c.number >= 0 THEN 0 ELSE 1 END, c.number, so.priority, c.fs_path LIMIT 1`, seriesID)
-	c, err := scanChapter(row, &ref.LibraryID, &ref.LibraryRoot, &ref.SeriesAgeRating)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
-	}
+	all, err := s.ListChaptersEffective(seriesID)
 	if err != nil {
 		return nil, err
 	}
-	ref.Chapter = *c
-	return &ref, nil
+	if len(all) == 0 {
+		return nil, ErrNotFound
+	}
+	SortChapters(all)
+	return s.GetChapterRef(all[0].ID)
 }
 
 // CanViewChapter checks library whitelist and age limit for a chapter.

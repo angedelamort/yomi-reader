@@ -9,9 +9,9 @@ type User struct {
 	IsAdmin  bool   `json:"isAdmin"`
 }
 
-// Provider abstracts an authentication backend (local accounts or dev mock).
+// Provider abstracts an authentication backend (local, Plex, or dev mock).
 type Provider interface {
-	// Name returns the provider identifier ("local" or "mock").
+	// Name returns the provider identifier ("local", "plex", or "mock").
 	Name() string
 
 	// StartLogin begins the redirect login flow and returns the URL the browser

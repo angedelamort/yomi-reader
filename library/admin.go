@@ -296,33 +296,37 @@ func (h *Handler) AdminListJobs(w http.ResponseWriter, r *http.Request) {
 }
 
 // AdminUpdateSeries patches series metadata (title, summary, authors, status,
-// year, genres, tags, age rating). Writing text fields locks them against
-// ComicInfo fills on rescan. Send "ageRating":"auto" to unlock age detection;
-// "metaLocked":false to allow rescans to fill empty fields again.
+// year, genres, tags, age rating, source priority). Writing text fields locks
+// them against ComicInfo fills on rescan. Send "ageRating":"auto" to unlock age
+// detection; "metaLocked":false to allow rescans to fill empty fields again.
+// "sourcePriority":[] clears the per-series override (inherit global default).
 func (h *Handler) AdminUpdateSeries(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var in struct {
-		Title      *string   `json:"title"`
-		Summary    *string   `json:"summary"`
-		Authors    *string   `json:"authors"`
-		Status     *string   `json:"status"`
-		Year       *int      `json:"year"`
-		Genres     *[]string `json:"genres"`
-		Tags       *[]string `json:"tags"`
-		AgeRating  *string   `json:"ageRating"`
-		MetaLocked *bool     `json:"metaLocked"`
+		Title          *string   `json:"title"`
+		Summary        *string   `json:"summary"`
+		Authors        *string   `json:"authors"`
+		Status         *string   `json:"status"`
+		Year           *int      `json:"year"`
+		Genres         *[]string `json:"genres"`
+		Tags           *[]string `json:"tags"`
+		AgeRating      *string   `json:"ageRating"`
+		MetaLocked     *bool     `json:"metaLocked"`
+		SourcePriority *[]string `json:"sourcePriority"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
 	}
 	if in.Title == nil && in.Summary == nil && in.Authors == nil && in.Status == nil &&
-		in.Year == nil && in.Genres == nil && in.Tags == nil && in.AgeRating == nil && in.MetaLocked == nil {
+		in.Year == nil && in.Genres == nil && in.Tags == nil && in.AgeRating == nil &&
+		in.MetaLocked == nil && in.SourcePriority == nil {
 		writeErr(w, http.StatusBadRequest, "no fields to update")
 		return
 	}
 	err := h.store.UpdateSeriesMeta(id, SeriesMetaPatch{
 		Title: in.Title, Summary: in.Summary, Authors: in.Authors, Status: in.Status,
-		Year: in.Year, Genres: in.Genres, Tags: in.Tags, AgeRating: in.AgeRating, MetaLocked: in.MetaLocked,
+		Year: in.Year, Genres: in.Genres, Tags: in.Tags, AgeRating: in.AgeRating,
+		MetaLocked: in.MetaLocked, SourcePriority: in.SourcePriority,
 	})
 	if errors.Is(err, ErrNotFound) {
 		writeErr(w, http.StatusNotFound, "series not found")

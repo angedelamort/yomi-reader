@@ -39,10 +39,10 @@ func (h *Handler) SetAutoScanner(a *AutoScanner) { h.auto = a }
 func (h *Handler) Store() *Store { return h.store }
 
 // RecordLogin updates the user table after a successful login. Passwordless
-// providers (mock) create/refresh the account; local accounts only get a
+// providers (mock, plex) create/refresh the account; local accounts only get a
 // last-seen timestamp.
 func (h *Handler) RecordLogin(u *auth.User, provider string) error {
-	if provider == "mock" {
+	if provider == "mock" || provider == "plex" {
 		return h.store.UpsertExternalUser(u.Username, u.Email, u.IsAdmin)
 	}
 	h.store.TouchLastSeen(u.Username)
@@ -263,7 +263,7 @@ func resolveResume(merged []*Chapter, p *Progress) *Resume {
 }
 
 func (h *Handler) mergedChapters(seriesID string) ([]*Chapter, error) {
-	all, err := h.store.ListChapters(seriesID)
+	all, err := h.store.ListChaptersEffective(seriesID)
 	if err != nil {
 		return nil, err
 	}
@@ -460,7 +460,7 @@ func (h *Handler) GetSeries(w http.ResponseWriter, r *http.Request) {
 		h.internalErr(w, err)
 		return
 	}
-	all, err := h.store.ListChapters(se.ID)
+	all, err := h.store.ListChaptersEffective(se.ID)
 	if err != nil {
 		h.internalErr(w, err)
 		return
@@ -527,7 +527,7 @@ func (h *Handler) ListChapters(w http.ResponseWriter, r *http.Request) {
 		h.internalErr(w, err)
 		return
 	}
-	all, err := h.store.ListChapters(se.ID)
+	all, err := h.store.ListChaptersEffective(se.ID)
 	if err != nil {
 		h.internalErr(w, err)
 		return
@@ -624,7 +624,7 @@ func (h *Handler) GetChapter(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	all, err := h.store.ListChapters(ref.SeriesID)
+	all, err := h.store.ListChaptersEffective(ref.SeriesID)
 	if err != nil {
 		h.internalErr(w, err)
 		return

@@ -63,15 +63,16 @@ type Series struct {
 	Tags         []string   `json:"tags"`
 	CoverRel     string     `json:"-"`
 	CoverLocked  bool       `json:"coverLocked,omitempty"`
-	MetaLocked   bool       `json:"metaLocked,omitempty"`
-	HasCover     bool       `json:"hasCover"`
-	ChapterCount int        `json:"chapterCount"`
-	AddedAt      time.Time  `json:"addedAt"`
-	UpdatedAt    time.Time  `json:"updatedAt"`
-	Sources      []string   `json:"sources"`
-	Favorite     bool       `json:"favorite"`
-	LastReadAt   *time.Time `json:"lastReadAt,omitempty"`
-	CoverURL     string     `json:"coverUrl"`
+	MetaLocked     bool       `json:"metaLocked,omitempty"`
+	HasCover       bool       `json:"hasCover"`
+	ChapterCount   int        `json:"chapterCount"`
+	AddedAt        time.Time  `json:"addedAt"`
+	UpdatedAt      time.Time  `json:"updatedAt"`
+	Sources        []string   `json:"sources"`
+	SourcePriority []string   `json:"sourcePriority,omitempty"` // per-series override; empty = global default
+	Favorite       bool       `json:"favorite"`
+	LastReadAt     *time.Time `json:"lastReadAt,omitempty"`
+	CoverURL       string     `json:"coverUrl"`
 
 	NormalizedTitle string `json:"-"`
 }
