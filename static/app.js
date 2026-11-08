@@ -52,7 +52,8 @@
     trash: '<path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/>',
     edit: '<path d="M4 20h4L19 9l-4-4L4 16zM13.500 6.500l4 4"/>',
     up: '<path d="M5 15l7-7 7 7"/>',
-    down: '<path d="M5 9l7 7 7-7"/>'
+    down: '<path d="M5 9l7 7 7-7"/>',
+    chevron: '<path d="M6 9l6 6 6-6"/>'
   };
   function icon(name, extra) {
     return h('span', {
@@ -284,16 +285,81 @@
     hdr.append(
       h('a', { class: 'brand', href: '#/', 'aria-label': 'Yomi' }, 'Yomi', h('i', { class: 'dot' })),
       nav,
-      h('div', { class: 'hdr-right' },
-        h('a', {
-          class: 'who' + (active === 'settings' ? ' on' : ''),
-          href: '#/settings',
-          title: t('nav_settings'),
-          'aria-current': active === 'settings' ? 'page' : null
-        }, S.me ? S.me.username : '')));
+      h('div', { class: 'hdr-right' }, accountMenu(active)));
   }
   function navLink(href, label, on) {
     return h('a', { href: href, class: on ? 'on' : '', 'aria-current': on ? 'page' : null }, label);
+  }
+  function userAvatar(cls) {
+    var name = (S.me && S.me.username) || '?';
+    return h('span', { class: 'avatar' + (cls ? ' ' + cls : ''), 'aria-hidden': 'true' }, initial(name));
+  }
+  function accountMenu(active) {
+    var me = S.me || {};
+    var open = false;
+    var menu = h('div', {
+      class: 'account-menu',
+      role: 'menu',
+      hidden: true
+    },
+      h('div', { class: 'account-head' },
+        userAvatar('lg'),
+        h('strong', { class: 'account-name' }, me.username || ''),
+        me.email ? h('span', { class: 'account-sub' }, me.email) : null,
+        me.isAdmin ? h('span', { class: 'badge' }, t('admin_badge')) : null),
+      h('div', { class: 'account-links' },
+        h('a', {
+          class: 'account-item' + (active === 'settings' ? ' on' : ''),
+          href: '#/settings',
+          role: 'menuitem',
+          onclick: function () { setOpen(false); }
+        }, t('nav_settings'))),
+      h('div', { class: 'account-foot' },
+        h('button', {
+          class: 'account-item',
+          type: 'button',
+          role: 'menuitem',
+          onclick: function () { setOpen(false); logout(); }
+        }, t('logout'))));
+    var btn = h('button', {
+      class: 'who' + (active === 'settings' ? ' on' : ''),
+      type: 'button',
+      'aria-haspopup': 'menu',
+      'aria-expanded': 'false',
+      'aria-label': t('account_menu'),
+      title: me.username || t('account_menu'),
+      onclick: function (e) { e.stopPropagation(); setOpen(!open); }
+    }, userAvatar(), icon('chevron', 'xs'));
+    var wrap = h('div', { class: 'account' }, btn, menu);
+
+    function detach() {
+      document.removeEventListener('click', onDoc);
+      document.removeEventListener('keydown', onKey);
+    }
+    function onDoc(e) {
+      if (!wrap.isConnected) { detach(); return; }
+      if (!wrap.contains(e.target)) setOpen(false);
+    }
+    function onKey(e) {
+      if (!wrap.isConnected) { detach(); return; }
+      if (e.key === 'Escape') setOpen(false);
+    }
+    function setOpen(v) {
+      if (open === v) return;
+      open = v;
+      menu.hidden = !open;
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      wrap.classList.toggle('open', open);
+      if (open) {
+        setTimeout(function () {
+          document.addEventListener('click', onDoc);
+          document.addEventListener('keydown', onKey);
+        }, 0);
+      } else {
+        detach();
+      }
+    }
+    return wrap;
   }
   function langToggle() {
     return h('div', { class: 'lang', role: 'group', 'aria-label': t('language') },
@@ -1623,9 +1689,7 @@
     clear(box).appendChild(h('div', { class: 'stack settings-block' },
       h('h3', { class: 'display' }, t('settings_prefs')),
       h('div', { class: 'field' }, h('span', { class: 'lbl' }, t('language')), langToggle()),
-      h('p', { class: 'muted' }, t('reader_mode_series_hint')),
       h('div', { class: 'row' },
-        h('button', { class: 'btn', type: 'button', onclick: logout }, icon('out', 'xs'), t('logout')),
         h('span', { class: 'muted app-version', title: t('version') }, t('version') + ' ' + ver))));
     if (!S.me.isAdmin) return;
 
@@ -1719,7 +1783,7 @@
         field(t('library_path'), h('div', { class: 'inline' }, pathIn, h('button', { class: 'btn', type: 'button', onclick: function () { browseDialog(pathIn.value.trim(), function (p) { pathIn.value = p; if (!nameIn.value) nameIn.value = p.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || p; }); } }, icon('folder', 'xs'), t('browse'))))),
       h('button', { class: 'btn primary', type: 'submit' }, icon('plus', 'xs'), t('add_library')));
 
-    clear(box).append(h('p', { class: 'muted note' }, t('age_note')), listEl, addForm);
+    clear(box).append(listEl, addForm);
     paintAll();
     poll(refresh, 1800);
   }
@@ -1889,7 +1953,6 @@
       field(t('auto_scan_hours'), hours, t('auto_scan_hint')),
       field(t('default_reader_mode'), rm, t('default_reader_mode_hint')),
       field(t('random_refresh'), refresh, t('random_refresh_hint')),
-      h('p', { class: 'muted note' }, t('age_note')),
       h('div', { class: 'row' }, h('button', { class: 'btn primary', type: 'submit' }, t('save'))));
     clear(box).appendChild(form);
   }

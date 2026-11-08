@@ -124,13 +124,55 @@ body.is-login .view, body.is-reader .view { min-height: 100vh; }
   content: ''; position: absolute; left: 12px; right: 12px; bottom: 2px; height: 2px; border-radius: 2px; background: var(--ember);
 }
 .hdr-right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.account { position: relative; }
 .who {
-  color: var(--muted); font-size: 13px; font-weight: 600; margin: 0 4px; max-width: 14ch;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  padding: 6px 8px; border-radius: 8px; transition: color .15s, background .15s;
+  display: inline-flex; align-items: center; gap: 4px;
+  margin: 0; padding: 4px 6px 4px 4px; border: 0; border-radius: 999px;
+  color: var(--muted); background: none; cursor: pointer;
+  transition: color .15s, background .15s;
 }
-.who:hover { color: var(--paper); background: rgba(232, 220, 200, .09); }
-.who.on { color: var(--paper); }
+.who:hover, .account.open .who, .who.on { color: var(--paper); background: rgba(232, 220, 200, .09); }
+.who .ic { opacity: .7; transition: transform .18s var(--ease); }
+.account.open .who .ic { transform: rotate(180deg); opacity: 1; }
+.avatar {
+  width: 30px; height: 30px; border-radius: 50%; flex: none;
+  display: grid; place-items: center;
+  font: 700 13px/1 var(--font-display); letter-spacing: 0;
+  color: var(--ember-ink); background: linear-gradient(145deg, var(--ember-2), var(--ember));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .12);
+}
+.avatar.lg { width: 56px; height: 56px; font-size: 22px; margin-bottom: 10px; }
+.account-menu {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 40;
+  width: min(280px, calc(100vw - 20px));
+  padding: 4px 0;
+  background: var(--ink-2); border: 1px solid var(--line-2); border-radius: 14px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .45);
+  animation: account-in .18s var(--ease);
+}
+@keyframes account-in { from { opacity: 0; transform: translateY(-4px); } }
+.account-head {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  padding: 18px 18px 14px; border-bottom: 1px solid var(--line);
+}
+.account-name {
+  font: 700 15px/1.25 var(--font-display); color: var(--paper);
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+}
+.account-sub {
+  margin-top: 2px; font-size: 12.5px; color: var(--muted);
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+}
+.account-head .badge { margin-top: 8px; }
+.account-links, .account-foot { display: grid; padding: 6px; }
+.account-foot { border-top: 1px solid var(--line); }
+.account-item {
+  display: block; width: 100%; padding: 10px 12px; border: 0; border-radius: 8px;
+  text-align: left; font: 600 14px/1.3 var(--font-ui); color: var(--paper);
+  background: none; cursor: pointer; transition: background .15s, color .15s;
+}
+.account-item:hover { background: rgba(232, 220, 200, .08); }
+.account-item.on { color: var(--ember-2); }
 .lang { display: inline-flex; border: 1px solid var(--line-2); border-radius: 999px; padding: 2px; width: fit-content; }
 .lang button {
   font: 700 11px var(--font-ui); letter-spacing: .06em; color: var(--muted); background: none; border: 0;
@@ -561,7 +603,8 @@ body.is-reader .toasts { bottom: calc(76px + var(--safe-b)); }
 @media (max-width: 760px) {
   :root { --tile-w: 124px; --hdr-h: 52px; }
   .brand { font-size: 23px; }
-  .who { max-width: 10ch; font-size: 12.5px; padding: 5px 6px; margin: 0 2px; }
+  .who { padding: 3px 4px 3px 3px; }
+  .avatar { width: 28px; height: 28px; font-size: 12px; }
   .settings-layout { grid-template-columns: 1fr; gap: 16px; }
   .settings-nav {
     flex-direction: row; flex-wrap: nowrap; gap: 2px; position: static;

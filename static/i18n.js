@@ -6,7 +6,7 @@
     en: {
       tagline: 'Read anything. Pick up anywhere.',
       nav_home: 'Home', nav_adult: 'Adult', nav_library: 'Browse', nav_admin: 'Admin', nav_settings: 'Settings',
-      language: 'Language', logout: 'Sign out',
+      language: 'Language', logout: 'Sign out', account_menu: 'Account menu',
       sign_in: 'Sign in', sign_in_sso: 'Continue', sign_in_plex: 'Sign in with Plex', username: 'Username', password: 'Password',
       loading: 'Loading…', retry: 'Retry', error_title: 'Something went wrong',
       continue_reading: 'Continue reading', favorites: 'Favorites', recently_added: 'Recently added',
@@ -66,9 +66,7 @@
 
       tab_libraries: 'Libraries', tab_users: 'Users', tab_settings: 'Settings', tab_jobs: 'Jobs',
       settings_prefs: 'Your preferences', settings_server: 'Server', version: 'Version',
-      reader_mode_series_hint: 'Reader mode is set per series from the reader toolbar.',
       default_reader_mode_hint: 'Used for series that do not yet have a reader mode of their own.',
-      age_note: 'Age ratings are detected automatically. Admins can edit metadata (including age) on each series page.',
       scan: 'Scan', rename: 'Rename', delete: 'Delete', edit: 'Edit', cancel: 'Cancel', close: 'Close', save: 'Save', refresh: 'Refresh', deleted: 'Deleted',
       last_scan: 'Last scan', no_libraries: 'No libraries yet. Add one below.',
       scan_discovering: 'Discovering…', scan_scanning: 'Scanning…', scan_cleanup: 'Cleaning up…',
@@ -99,7 +97,7 @@
     fr: {
       tagline: 'Lisez tout. Reprenez partout.',
       nav_home: 'Accueil', nav_adult: 'Adulte', nav_library: 'Parcourir', nav_admin: 'Admin', nav_settings: 'Réglages',
-      language: 'Langue', logout: 'Se déconnecter',
+      language: 'Langue', logout: 'Se déconnecter', account_menu: 'Menu du compte',
       sign_in: 'Se connecter', sign_in_sso: 'Continuer', sign_in_plex: 'Se connecter avec Plex', username: 'Nom d’utilisateur', password: 'Mot de passe',
       loading: 'Chargement…', retry: 'Réessayer', error_title: 'Une erreur est survenue',
       continue_reading: 'Reprendre la lecture', favorites: 'Favoris', recently_added: 'Ajouts récents',
@@ -159,9 +157,7 @@
 
       tab_libraries: 'Bibliothèques', tab_users: 'Utilisateurs', tab_settings: 'Réglages', tab_jobs: 'Tâches',
       settings_prefs: 'Vos préférences', settings_server: 'Serveur', version: 'Version',
-      reader_mode_series_hint: 'Le mode de lecture se règle par série depuis la barre du lecteur.',
       default_reader_mode_hint: 'Utilisé pour les séries qui n’ont pas encore de mode de lecture.',
-      age_note: 'Les classifications d’âge sont détectées automatiquement. Un admin peut modifier les infos (dont l’âge) sur chaque série.',
       scan: 'Analyser', rename: 'Renommer', delete: 'Supprimer', edit: 'Modifier', cancel: 'Annuler', close: 'Fermer', save: 'Enregistrer', refresh: 'Actualiser', deleted: 'Supprimé',
       last_scan: 'Dernière analyse', no_libraries: 'Aucune bibliothèque. Ajoutez-en une ci-dessous.',
       scan_discovering: 'Exploration…', scan_scanning: 'Analyse…', scan_cleanup: 'Nettoyage…',
