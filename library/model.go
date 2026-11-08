@@ -90,6 +90,7 @@ type ChapterAlt struct {
 	ID         string `json:"id"`
 	SourceID   string `json:"sourceId"`
 	SourceName string `json:"sourceName"`
+	Edition    string `json:"edition,omitempty"` // e.g. official, unofficial
 	PageCount  int    `json:"pageCount"`
 }
 
@@ -103,6 +104,7 @@ type Chapter struct {
 	Number     float64      `json:"number"`
 	Volume     *float64     `json:"volume,omitempty"`
 	Title      string       `json:"title"`
+	Edition    string       `json:"edition,omitempty"` // e.g. official, unofficial (from filename)
 	FSPath     string       `json:"-"`
 	Format     string       `json:"format"`
 	PageCount  int          `json:"pageCount"`

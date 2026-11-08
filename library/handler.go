@@ -70,6 +70,13 @@ func (h *Handler) internalErr(w http.ResponseWriter, err error) {
 }
 
 func chapterDisplayTitle(c *Chapter) {
+	ensureEdition(c)
+	if ed, cleaned := splitEditionTitle(c.Title); ed != "" {
+		if c.Edition == "" {
+			c.Edition = ed
+		}
+		c.Title = cleaned
+	}
 	if strings.TrimSpace(c.Title) != "" {
 		return
 	}
@@ -636,12 +643,12 @@ func (h *Handler) GetChapter(w http.ResponseWriter, r *http.Request) {
 	d := ChapterDetail{Chapter: &ref.Chapter}
 	_ = h.store.db.QueryRow(`SELECT title FROM series WHERE id = ?`, ref.SeriesID).Scan(&d.SeriesTitle)
 
-	// Other copies of the same chapter number (other sources).
+	// Other copies of the same chapter number (other sources / editions).
 	if ref.Number >= 0 {
 		k := numKey(ref.Number)
 		for _, c := range all {
 			if c.ID != ref.ID && c.Number >= 0 && numKey(c.Number) == k {
-				d.Alts = append(d.Alts, ChapterAlt{ID: c.ID, SourceID: c.SourceID, SourceName: c.SourceName, PageCount: c.PageCount})
+				d.Alts = append(d.Alts, chapterAlt(c))
 			}
 		}
 	}

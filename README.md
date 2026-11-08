@@ -125,8 +125,11 @@ If `<root>/mangas` exists it is used, otherwise `<root>` itself is the mangas ro
 * Paths are always checked to stay under the library root before opening a chapter.
 
 **Merged chapters:** for each chapter number the copy from the best source wins (lower priority = better;
-ties: more pages). Prefer per-series order via **Edit → Sources** (`sourcePriority` on the series; only shown when
-a title has more than one source). The admin `source_priority` setting is the default for series without an override
+then **edition**: `official_` filename prefix beats plain/`unofficial_`; then more pages). Same-source
+pairs like MangaFire’s `official_Ch. N` / `unofficial_Ch. N` collapse to one reading entry (official by
+default; unofficial only when official is missing); the other edition stays in `alternatives`. Prefer
+per-series order via **Edit → Sources** (`sourcePriority` on the series; only shown when a title has more
+than one source). The admin `source_priority` setting is the default for series without an override
 (CSV of source names, `MangaDex` matches `MangaDex (EN)`).
 
 ## API (JSON)

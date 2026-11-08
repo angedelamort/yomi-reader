@@ -73,6 +73,27 @@
   }
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
   function enc(s) { return encodeURIComponent(s); }
+
+  /** Localized label for a chapter edition token (official / unofficial / …). */
+  function editionLabel(ed) {
+    if (!ed) return '';
+    var key = 'edition_' + String(ed).toLowerCase();
+    var s = t(key);
+    if (s !== key) return s;
+    return String(ed).charAt(0).toUpperCase() + String(ed).slice(1).toLowerCase();
+  }
+
+  /**
+   * Label for a chapter copy in source/edition switchers.
+   * Same source + edition → just the edition; otherwise "Source · Edition".
+   */
+  function copyLabel(c, peer) {
+    if (!c) return '';
+    var ed = editionLabel(c.edition);
+    if (peer && c.sourceName === peer.sourceName && ed) return ed;
+    if (ed) return (c.sourceName || '') + ' · ' + ed;
+    return c.sourceName || ed || '';
+  }
   function fmtDate(s) {
     if (!s) return '—';
     var d = new Date(s);
@@ -673,10 +694,13 @@
             h('span', { class: 'chn' }, c.number >= 0 ? fmtNum(c.number) : '—'),
             h('span', { class: 'cht' }, c.title),
             when ? h('span', { class: 'chd', title: c.releasedAt || c.scannedAt || '' }, when) : h('span', { class: 'chd' }),
-            h('span', { class: 'chm' }, c.sourceName + (c.pageCount ? ' · ' + t('n_pages', { n: c.pageCount }) : '') + (c.format === 'pdf' ? ' · PDF' : '')),
+            h('span', { class: 'chm' }, copyLabel(c) + (c.pageCount ? ' · ' + t('n_pages', { n: c.pageCount }) : '') + (c.format === 'pdf' ? ' · PDF' : '')),
             isRead ? h('span', { class: 'chk', 'aria-label': t('read') }, icon('check', 'xs')) : null),
           alts.length ? h('div', { class: 'alts' }, h('span', { class: 'muted' }, t('also_in')),
-            alts.map(function (a) { return h('a', { class: 'alt', href: '#/read/' + enc(a.id) }, a.sourceName, a.pageCount ? ' · ' + a.pageCount : ''); })) : null));
+            alts.map(function (a) {
+              return h('a', { class: 'alt', href: '#/read/' + enc(a.id) },
+                copyLabel(a, c), a.pageCount ? ' · ' + a.pageCount : '');
+            })) : null));
       });
       list.appendChild(frag);
     }
@@ -1099,8 +1123,8 @@
     var srcSel = null;
     if (ch.alternatives && ch.alternatives.length) {
       srcSel = h('select', { class: 'rd-sel src', 'aria-label': t('source') },
-        h('option', { value: chapterId, selected: true }, ch.sourceName),
-        ch.alternatives.map(function (a) { return h('option', { value: a.id }, a.sourceName); }));
+        h('option', { value: chapterId, selected: true }, copyLabel(ch)),
+        ch.alternatives.map(function (a) { return h('option', { value: a.id }, copyLabel(a, ch)); }));
       srcSel.addEventListener('change', function () { srcSel.blur(); location.hash = '#/read/' + enc(srcSel.value) + '?p=0'; });
     }
 
@@ -1602,7 +1626,7 @@
       h('p', { class: 'muted' }, t('reader_mode_series_hint')),
       h('div', { class: 'row' },
         h('button', { class: 'btn', type: 'button', onclick: logout }, icon('out', 'xs'), t('logout')),
-        h('span', { class: 'muted app-version', title: t('version') }, t('version') + ' ' + ver)));
+        h('span', { class: 'muted app-version', title: t('version') }, t('version') + ' ' + ver))));
     if (!S.me.isAdmin) return;
 
     var serverBox = h('div', { class: 'settings-block' });

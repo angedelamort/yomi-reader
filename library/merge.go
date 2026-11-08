@@ -2,6 +2,7 @@ package library
 
 import (
 	"math"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -23,12 +24,37 @@ func ApplySourcePriorityToChapters(chs []*Chapter, list []string) {
 	}
 }
 
+// ensureEdition fills Chapter.Edition from the title or file name when empty.
+func ensureEdition(c *Chapter) {
+	if c == nil || c.Edition != "" {
+		return
+	}
+	if ed, _ := splitEditionTitle(c.Title); ed != "" {
+		c.Edition = ed
+		return
+	}
+	if c.FSPath != "" {
+		c.Edition = editionFromName(filepath.Base(c.FSPath))
+	}
+}
+
+// chapterAlt builds an alternatives entry from a losing chapter copy.
+func chapterAlt(c *Chapter) ChapterAlt {
+	ensureEdition(c)
+	return ChapterAlt{ID: c.ID, SourceID: c.SourceID, SourceName: c.SourceName, Edition: c.Edition, PageCount: c.PageCount}
+}
+
 // betterChapter reports whether a should be preferred over b: best source
-// priority first, then more pages (a truncated copy loses), then name/path for
-// determinism.
+// priority first, then preferred edition (official > other > unofficial), then
+// more pages (a truncated copy loses), then name/path for determinism.
 func betterChapter(a, b *Chapter) bool {
+	ensureEdition(a)
+	ensureEdition(b)
 	if a.Priority != b.Priority {
 		return a.Priority < b.Priority
+	}
+	if ar, br := editionRank(a.Edition), editionRank(b.Edition); ar != br {
+		return ar < br
 	}
 	if a.PageCount != b.PageCount {
 		return a.PageCount > b.PageCount
@@ -47,6 +73,7 @@ func MergeChapters(all []*Chapter) []*Chapter {
 	byNum := map[int64][]*Chapter{}
 	var unnumbered []*Chapter
 	for _, c := range all {
+		ensureEdition(c)
 		if c.Number < 0 {
 			unnumbered = append(unnumbered, c)
 			continue
@@ -65,7 +92,7 @@ func MergeChapters(all []*Chapter) []*Chapter {
 				v := *o.Volume // inherit volume info from another source's copy
 				best.Volume = &v
 			}
-			best.Alts = append(best.Alts, ChapterAlt{ID: o.ID, SourceID: o.SourceID, SourceName: o.SourceName, PageCount: o.PageCount})
+			best.Alts = append(best.Alts, chapterAlt(o))
 		}
 		out = append(out, &best)
 	}

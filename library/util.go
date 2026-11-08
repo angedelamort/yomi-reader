@@ -185,7 +185,56 @@ var (
 	reVolume  = regexp.MustCompile(`(?i)(?:^|[^\p{L}])(?:volumes?|vol|v)[\s._#-]*(\d+(?:\.\d+)?)`)
 	reHash    = regexp.MustCompile(`#\s*(\d+(?:\.\d+)?)`)
 	reAnyNum  = regexp.MustCompile(`(\d{1,6}(?:\.\d+)?)`)
+	// Leading edition token used by some aggregators (e.g. MangaFire):
+	// "official_Ch. 1.cbz", "unofficial_Ch. 1.cbz".
+	reEditionPrefix = regexp.MustCompile(`(?i)^([a-z][a-z0-9]*)[_.\-\s]+`)
 )
+
+// knownEditionRank maps filename edition tokens to preference (lower = better).
+// Official wins when present; unofficial is last; unknown/other editions sit in
+// between so they are used when official is missing.
+var knownEditionRank = map[string]int{
+	"official":   0,
+	"unofficial": 2,
+}
+
+// editionRank returns the merge preference for an edition token (lower = better).
+func editionRank(ed string) int {
+	ed = strings.ToLower(strings.TrimSpace(ed))
+	if ed == "" {
+		return 1
+	}
+	if r, ok := knownEditionRank[ed]; ok {
+		return r
+	}
+	return 1
+}
+
+// splitEditionTitle pulls a known leading edition token off a chapter title.
+// Unknown prefixes (e.g. "MANGA Plus_#001") are left alone.
+func splitEditionTitle(title string) (edition, cleaned string) {
+	cleaned = strings.TrimSpace(title)
+	m := reEditionPrefix.FindStringSubmatch(cleaned)
+	if m == nil {
+		return "", cleaned
+	}
+	tok := strings.ToLower(m[1])
+	if _, ok := knownEditionRank[tok]; !ok {
+		return "", cleaned
+	}
+	rest := strings.TrimSpace(cleaned[len(m[0]):])
+	if rest == "" {
+		return tok, cleaned
+	}
+	return tok, rest
+}
+
+// editionFromName returns the known edition token in a file/folder name, if any.
+func editionFromName(name string) string {
+	base := chapterBaseName(name, true)
+	ed, _ := splitEditionTitle(base)
+	return ed
+}
 
 // chapterExts are the file extensions recognised as chapter containers.
 var chapterExts = map[string]string{

@@ -105,6 +105,61 @@ func TestMergeChapters(t *testing.T) {
 	}
 }
 
+func TestSplitEditionTitle(t *testing.T) {
+	cases := []struct {
+		in, ed, title string
+	}{
+		{"official_Ch. 0 - Prologue", "official", "Ch. 0 - Prologue"},
+		{"unofficial_Ch. 73.5", "unofficial", "Ch. 73.5"},
+		{"Official Ch. 1", "official", "Ch. 1"},
+		{"Ch. 1", "", "Ch. 1"},
+		{"MANGA Plus_#001 - Sword 1", "", "MANGA Plus_#001 - Sword 1"},
+	}
+	for _, c := range cases {
+		ed, title := splitEditionTitle(c.in)
+		if ed != c.ed || title != c.title {
+			t.Errorf("%q: got (%q,%q), want (%q,%q)", c.in, ed, title, c.ed, c.title)
+		}
+	}
+}
+
+func TestMergePrefersOfficialEdition(t *testing.T) {
+	// Same source: official wins even with fewer pages.
+	all := []*Chapter{
+		{ID: "u", SourceID: "mf", SourceName: "MangaFire", Priority: 0, Number: 1, PageCount: 40,
+			Title: "unofficial_Ch. 1", FSPath: "/u/unofficial_Ch. 1.cbz"},
+		{ID: "o", SourceID: "mf", SourceName: "MangaFire", Priority: 0, Number: 1, PageCount: 30,
+			Title: "official_Ch. 1", FSPath: "/u/official_Ch. 1.cbz"},
+	}
+	m := MergeChapters(all)
+	if len(m) != 1 || m[0].ID != "o" {
+		t.Fatalf("official should win, got %+v", m)
+	}
+	if m[0].Edition != "official" || len(m[0].Alts) != 1 || m[0].Alts[0].Edition != "unofficial" {
+		t.Fatalf("editions: primary=%q alts=%+v", m[0].Edition, m[0].Alts)
+	}
+
+	// No official → unofficial (or other) is used.
+	only := MergeChapters([]*Chapter{
+		{ID: "u96", SourceID: "mf", SourceName: "MangaFire", Priority: 0, Number: 96, PageCount: 20,
+			Title: "unofficial_Ch. 96", FSPath: "/u/unofficial_Ch. 96.cbz"},
+	})
+	if len(only) != 1 || only[0].ID != "u96" || only[0].Edition != "unofficial" {
+		t.Fatalf("fallback: %+v", only)
+	}
+
+	// Better source still beats a worse-source official copy.
+	cross := MergeChapters([]*Chapter{
+		{ID: "a-off", SourceID: "A", SourceName: "A", Priority: 1, Number: 5, PageCount: 10,
+			Title: "official_Ch. 5", FSPath: "/a/official_Ch. 5.cbz"},
+		{ID: "b-plain", SourceID: "B", SourceName: "B", Priority: 0, Number: 5, PageCount: 10,
+			Title: "Ch. 5", FSPath: "/b/Ch. 5.cbz"},
+	})
+	if cross[0].ID != "b-plain" {
+		t.Fatalf("source priority should still win, got %s", cross[0].ID)
+	}
+}
+
 func TestApplySourcePriorityToChapters(t *testing.T) {
 	ch := func(id, src string, prio int, n float64) *Chapter {
 		return &Chapter{ID: id, SourceID: src, SourceName: src + " (EN)", Priority: prio, Number: n, PageCount: 10}
