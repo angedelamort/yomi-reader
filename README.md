@@ -2,7 +2,6 @@
 
 Self-hosted manga / webtoon reader in Go (no CGO): SQLite catalog, multi-source series merging,
 a fast webtoon-first SPA, reading progress, per-user age/library restrictions, OPDS, and admin.
-Modeled on the `plex-photo` architecture (`config` / `auth` / `library` / `server` + `static/`).
 
 The library is **read-only**: nothing is ever written into a library root. Covers are cached under
 `DATA_PATH/cache/covers`.
@@ -19,17 +18,18 @@ Vanilla SPA (no build step) with EN/FR:
 * **PWA** — installable (`manifest.webmanifest` + service worker): app shell offline, cached covers,
   recently viewed pages; install from the browser on phone/desktop (HTTPS or localhost)
 
-Auth: **local** (default), **plex** (plex.tv PIN popup, same pattern as plex-photo), or **mock** (dev).
+Auth: **plex** (default, plex.tv PIN popup), **local** (username/password), or **mock** (dev).
 
 See [TODO.md](TODO.md) for planned work (new-chapter alerts, reading lists, metadata providers, …).
 
 ## Quick start
 
 ```powershell
-# Windows, default local auth. Registers M:\books\suwayomi automatically if it exists.
+# Windows — set your Plex machine ID first (Settings → General, or /identity).
+$env:PLEX_MACHINE_ID = "yourMachineId"
 go build -o yomi-reader.exe .
 .\yomi-reader.exe
-# -> http://localhost:8098   login: admin / admin  (warning is logged; set ADMIN_USER/ADMIN_PASS)
+# -> http://localhost:8098   Sign in with Plex
 ```
 
 ```bash
@@ -37,7 +37,9 @@ go build -o yomi-reader.exe .
 AUTH_PROVIDER=mock DEFAULT_LIBRARY_PATH=/path/to/suwayomi DATA_PATH=./testdata/data go run .
 ```
 
-Docker: `docker compose up -d` (edit the library mount in `docker-compose.yml`).
+Docker: copy `.env.example` → `.env`, set `PLEX_MACHINE_ID`, then `docker compose up -d`
+(edit the library mount in `docker-compose.yml`). For username/password instead:
+`docker compose -f docker-compose.yml -f docker-compose.local.yml up -d`.
 
 ## Releases (Synology / Docker)
 
@@ -73,11 +75,11 @@ DSM share owner if needed.
 |---|---|---|
 | `DATA_PATH` | `./data` | SQLite DB (`yomi-reader.db`), `session.key`, `cache/covers/` |
 | `PORT` | `8098` | |
-| `AUTH_PROVIDER` | `local` | `local` (bcrypt), `plex`, or `mock` |
+| `AUTH_PROVIDER` | `plex` | `plex` (plex.tv PIN), `local` (bcrypt), or `mock` |
 | `COOKIE_SECURE` | `false` | `true` only behind HTTPS |
 | `SESSION_SECRET` | auto | otherwise generated and stored in `DATA_PATH/session.key` |
 | `ADMIN_USER` / `ADMIN_PASS` | – | local provider: first admin; empty DB without them creates `admin`/`admin` |
-| `PLEX_MACHINE_ID` | – | **required** when `AUTH_PROVIDER=plex` (PMS machineIdentifier) |
+| `PLEX_MACHINE_ID` | – | **required** for default plex auth (PMS machineIdentifier) |
 | `PUBLIC_BASE_URL` | – | optional; base URL for Plex redirect callback (`/auth/login`) |
 | `MOCK_USER` / `MOCK_ADMIN` | `dev` / `true` | mock provider identity |
 | `THUMB_WIDTH` | `300` | cover width (height = 1.5 x) |
@@ -195,17 +197,17 @@ server/             routes, login rate limit, static SPA + fallback
 static/             SPA (index.html, app.js, style.css, i18n.js, plex-login.js, sw.js, manifest, icons/)
 ```
 
-### Plex auth
+### Plex auth (default)
 
 ```bash
-AUTH_PROVIDER=plex PLEX_MACHINE_ID=yourMachineId go run .
-# or: docker compose -f docker-compose.yml -f docker-compose.plex.yml up -d
+PLEX_MACHINE_ID=yourMachineId go run .
+# or: docker compose up -d   # after setting PLEX_MACHINE_ID in .env
 ```
 
 Sign-in uses a browser popup against plex.tv (no public callback URL required). Shared Plex users can
 log in; the server owner becomes Yomi admin. After first login, tune age caps / library ACL in Admin → Users.
 OPDS Basic auth needs a **local** password account — with Plex-only auth, use a session cookie in the client
-or keep a local admin for OPDS.
+or keep a local admin (`AUTH_PROVIDER=local`) for OPDS.
 
 
 `go test ./...` covers filename parsing, natural sort, merging, age rating, path confinement and archive reading.

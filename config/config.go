@@ -53,7 +53,7 @@ func Load() (*Config, error) {
 		DataPath:           getEnv("DATA_PATH", "./data"),
 		Port:               getEnv("PORT", "8098"),
 		SessionSecret:      os.Getenv("SESSION_SECRET"),
-		AuthProvider:       strings.ToLower(getEnv("AUTH_PROVIDER", "local")),
+		AuthProvider:       strings.ToLower(getEnv("AUTH_PROVIDER", "plex")),
 		CookieSecure:       getEnvBool("COOKIE_SECURE", false),
 		PlexMachineID:      strings.TrimSpace(os.Getenv("PLEX_MACHINE_ID")),
 		PublicBaseURL:      strings.TrimRight(strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL")), "/"),

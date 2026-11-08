@@ -1,0 +1,10 @@
+# Local username/password auth overlay (instead of default Plex).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+services:
+  yomi-reader:
+    environment:
+      AUTH_PROVIDER: local
+      PLEX_MACHINE_ID: ""
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASS: ${ADMIN_PASS:-change-me}

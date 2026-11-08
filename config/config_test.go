@@ -2,6 +2,19 @@ package config
 
 import "testing"
 
+func TestLoadDefaultIsPlex(t *testing.T) {
+	t.Setenv("AUTH_PROVIDER", "")
+	t.Setenv("PLEX_MACHINE_ID", "abc123")
+	t.Setenv("DATA_PATH", t.TempDir())
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AuthProvider != "plex" {
+		t.Fatalf("default provider = %q, want plex", cfg.AuthProvider)
+	}
+}
+
 func TestLoadPlexRequiresMachineID(t *testing.T) {
 	t.Setenv("AUTH_PROVIDER", "plex")
 	t.Setenv("PLEX_MACHINE_ID", "")

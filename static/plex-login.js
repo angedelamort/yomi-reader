@@ -1,5 +1,5 @@
 "use strict";
-// Client-side Plex PIN login (popup + poll), same approach as plex-photo / Overseerr.
+// Client-side Plex PIN login (popup + poll), same approach as Overseerr.
 // The browser asks plex.tv for a PIN, opens the Plex auth page in a popup, polls
 // until the PIN yields an authToken, then posts that token to our backend.
 // No server-side callback URL is required (works on localhost, LAN IP, proxy…).

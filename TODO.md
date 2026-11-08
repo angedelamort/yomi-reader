@@ -55,6 +55,6 @@ not in the reader. Later: real multi-lists.
 
 ## Auth
 
-**Plex** is done (`AUTH_PROVIDER=plex`, `PLEX_MACHINE_ID`, popup PIN + `/api/auth/plex/exchange`).
+**Plex** is done (default `AUTH_PROVIDER=plex`, `PLEX_MACHINE_ID`, popup PIN + `/api/auth/plex/exchange`).
 
 - Later: Google OAuth as an additional provider

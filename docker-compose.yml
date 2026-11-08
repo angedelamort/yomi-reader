@@ -1,8 +1,10 @@
 # Yomi Reader: manga/webtoon reader.
 #
-#   docker compose up -d      # http://localhost:8098
+#   cp .env.example .env   # set PLEX_MACHINE_ID
+#   docker compose up -d   # http://localhost:8098
 #
-# First login: ADMIN_USER / ADMIN_PASS (or admin/admin on an empty database).
+# Default auth is Plex (plex.tv PIN). For username/password instead:
+#   AUTH_PROVIDER=local ADMIN_USER=admin ADMIN_PASS=...
 #
 # Production / Synology: prefer the release image
 #   angedelamort/yomi-reader:latest  (from dist/*.tar.gz or ghcr.io)
@@ -15,11 +17,11 @@ services:
     ports:
       - "8098:8098"
     environment:
-      AUTH_PROVIDER: local
-      ADMIN_USER: admin
-      ADMIN_PASS: change-me
+      AUTH_PROVIDER: plex
+      PLEX_MACHINE_ID: ${PLEX_MACHINE_ID:-}
+      # PUBLIC_BASE_URL: https://yomi.example.com   # optional; popup login does not need it
+      # COOKIE_SECURE: "true"                       # when behind HTTPS
       # SESSION_SECRET: generate-a-long-random-string
-      # COOKIE_SECURE: "true"          # when behind HTTPS
       DEFAULT_LIBRARY_PATH: /manga
       THUMB_WIDTH: "300"
       TZ: America/Toronto

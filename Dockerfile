@@ -22,7 +22,7 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 # root, the entrypoint chowns /data to PUID:PGID, then drops to that user.
 ENV DATA_PATH=/data \
     PORT=8098 \
-    AUTH_PROVIDER=local \
+    AUTH_PROVIDER=plex \
     DEFAULT_LIBRARY_PATH=/manga \
     TZ=America/Toronto \
     PUID=1000 \

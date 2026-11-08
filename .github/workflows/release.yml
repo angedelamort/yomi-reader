@@ -69,8 +69,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.vars.outputs.tag }}
         run: |
-          gh release create "$TAG" \
-            --title "$TAG" \
-            --generate-notes \
-            "dist/yomi-reader-$TAG.tar.gz" \
-            "dist/yomi-reader-latest.tar.gz"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              "dist/yomi-reader-$TAG.tar.gz" \
+              "dist/yomi-reader-latest.tar.gz" \
+              --clobber
+          else
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --generate-notes \
+              "dist/yomi-reader-$TAG.tar.gz" \
+              "dist/yomi-reader-latest.tar.gz"
+          fi
