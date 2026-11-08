@@ -1,0 +1,35 @@
+# Yomi Reader: manga/webtoon reader.
+#
+#   docker compose up -d      # http://localhost:8098
+#
+# First login: ADMIN_USER / ADMIN_PASS (or admin/admin on an empty database).
+#
+# Production / Synology: prefer the release image
+#   angedelamort/yomi-reader:latest  (from dist/*.tar.gz or ghcr.io)
+services:
+  yomi-reader:
+    image: angedelamort/yomi-reader:latest
+    container_name: yomi-reader
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8098:8098"
+    environment:
+      AUTH_PROVIDER: local
+      ADMIN_USER: admin
+      ADMIN_PASS: change-me
+      # SESSION_SECRET: generate-a-long-random-string
+      # COOKIE_SECURE: "true"          # when behind HTTPS
+      DEFAULT_LIBRARY_PATH: /manga
+      THUMB_WIDTH: "300"
+      TZ: America/Toronto
+      PUID: "1000"
+      PGID: "1000"
+    volumes:
+      - yomi-data:/data                 # SQLite + cover cache
+      # Library root (read-only). Layout: <root>/mangas/{Source}/{Series}/...
+      # Windows example: M:/books/suwayomi:/manga:ro
+      - /path/to/suwayomi:/manga:ro
+
+volumes:
+  yomi-data:

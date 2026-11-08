@@ -1,0 +1,23 @@
+# Secrets & local config
+.env
+
+# Build artifacts
+/dist/
+/yomi-reader
+yomi-reader.exe
+yomi-reader.exe~
+
+# Runtime data
+/data/
+/testdata/
+*.db
+*.db-shm
+*.db-wal
+session.key
+
+# Logs
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db

@@ -1,0 +1,33 @@
+# Development and tooling
+Makefile
+scripts/
+*.log
+*.exe
+*.exe~
+
+# Environment files
+.env
+.env.*
+
+# Runtime / local data (never bake into the image)
+data/
+testdata/
+dist/
+*.db
+*.db-shm
+*.db-wal
+session.key
+
+# Documentation
+README.md
+
+# IDE and version control
+.cursor/
+.git/
+.github/
+.gitignore
+
+# Docker files (not needed inside the build)
+Dockerfile
+docker-compose.yml
+.dockerignore
