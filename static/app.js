@@ -318,13 +318,23 @@
       img.addEventListener('error', function () { img.remove(); });
       cover.appendChild(img);
     }
-    if (s.ageRating === 'M' || s.ageRating === 'X') cover.appendChild(h('span', { class: 'age age-' + s.ageRating }, s.ageRating));
     if (s.favorite && !o.noFav) cover.appendChild(h('span', { class: 'fav-mark', 'aria-hidden': 'true' }, icon('heart')));
     if (o.progress != null) cover.appendChild(h('span', { class: 'bar' }, h('i', { style: { width: Math.round(clamp(o.progress, 0, 1) * 100) + '%' } })));
+    var subText = o.sub != null ? o.sub : (s.chapterCount != null ? t('n_chapters', { n: s.chapterCount }, s.chapterCount) : null);
+    var showAge = (s.ageRating === 'M' || s.ageRating === 'X') && S.ageMode !== 'adult';
+    var sub = null;
+    if (subText != null || showAge) {
+      sub = h('span', { class: 'ts' });
+      if (subText != null) sub.appendChild(document.createTextNode(subText));
+      if (showAge) {
+        if (subText != null) sub.appendChild(document.createTextNode(' · '));
+        sub.appendChild(h('span', { class: 'age-tag', title: t('age_rating') }, s.ageRating));
+      }
+    }
     return h('a', { class: 'tile', href: o.href || ('#/series/' + enc(s.id)), title: s.title },
       cover,
       h('span', { class: 'tt' }, s.title),
-      o.sub != null ? h('span', { class: 'ts' }, o.sub) : (s.chapterCount != null ? h('span', { class: 'ts' }, t('n_chapters', { n: s.chapterCount }, s.chapterCount)) : null));
+      sub);
   }
 
   function shelf(title, items, builder, seeAllHref) {
@@ -1585,12 +1595,14 @@
 
   /* ---- user + optional server settings ---- */
   async function userSettings(box, ctx) {
+    var ver = (S.info && S.info.version) || 'dev';
     clear(box).appendChild(h('div', { class: 'stack settings-block' },
       h('h3', { class: 'display' }, t('settings_prefs')),
       h('div', { class: 'field' }, h('span', { class: 'lbl' }, t('language')), langToggle()),
       h('p', { class: 'muted' }, t('reader_mode_series_hint')),
       h('div', { class: 'row' },
-        h('button', { class: 'btn', type: 'button', onclick: logout }, icon('out', 'xs'), t('logout')))));
+        h('button', { class: 'btn', type: 'button', onclick: logout }, icon('out', 'xs'), t('logout')),
+        h('span', { class: 'muted app-version', title: t('version') }, t('version') + ' ' + ver)));
     if (!S.me.isAdmin) return;
 
     var serverBox = h('div', { class: 'settings-block' });

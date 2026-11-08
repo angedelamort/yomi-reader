@@ -133,7 +133,7 @@ a title has more than one source). The admin `source_priority` setting is the de
 
 Errors are `{"error": "..."}`. Ages/ratings use codes `E`, `T`, `M`, `X`.
 
-**Auth** – `GET /api/auth/info` → `{provider, authenticated, user}`; `POST /api/auth/login {username,password}`
+**Auth** – `GET /api/auth/info` → `{provider, authenticated, user, version}`; `POST /api/auth/login {username,password}`
 (local only); `POST /api/auth/logout`; `GET /auth/login|/auth/callback|/auth/logout` (redirect / mock / Plex
 fallback). Plex popup: `GET /api/auth/plex/config`, `POST /api/auth/plex/exchange {token}` — users with access to
 `PLEX_MACHINE_ID` may sign in; the Plex server **owner** is admin. Failed password logins are throttled

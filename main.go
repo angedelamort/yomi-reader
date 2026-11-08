@@ -107,6 +107,7 @@ func main() {
 		Mw:        mw,
 		Library:   handler,
 		StaticDir: cfg.StaticDir,
+		Version:   version,
 	})
 
 	srv := &http.Server{

@@ -30,6 +30,7 @@ type Deps struct {
 	Mw        *auth.Middleware
 	Library   *library.Handler
 	StaticDir string
+	Version   string
 }
 
 func writeJSONOK(w http.ResponseWriter, v any) { writeJSON(w, http.StatusOK, v) }
@@ -128,7 +129,11 @@ func NewMux(d Deps) *http.ServeMux {
 
 	// --- Auth ---
 	mux.HandleFunc("GET /api/auth/info", func(w http.ResponseWriter, r *http.Request) {
-		info := map[string]any{"provider": d.Provider.Name(), "authenticated": false}
+		ver := d.Version
+		if ver == "" {
+			ver = "dev"
+		}
+		info := map[string]any{"provider": d.Provider.Name(), "authenticated": false, "version": ver}
 		if s, err := d.Sessions.Read(r); err == nil {
 			if isAdmin, ok := lib.Store().UserCheck(s.Username); ok {
 				info["authenticated"] = true
