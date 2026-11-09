@@ -1153,6 +1153,15 @@
     var els = [], io = null, lastTop = 0, ticking = false, prefetched = {}, keep = [];
     var stage = null, stageImg = null;
     var zonesEl = null, zonesTimer = 0, zonesFadeTimer = 0;
+    /* pinch-zoom / pan — when zoomed, tap zones & page turns stay off until reset */
+    var zoomEl = null, zScale = 1, zX = 0, zY = 0;
+    var ZOOM_MAX = 4, ZOOM_EPS = 1.02;
+    var pinch = null, pan = null, lastTap = 0, lastTapX = 0, lastTapY = 0;
+    var vpMeta = document.querySelector('meta[name="viewport"]');
+    var vpPrev = vpMeta ? vpMeta.getAttribute('content') : '';
+    if (vpMeta && !isPdf) {
+      vpMeta.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover');
+    }
 
     // initial position
     var q = rt.query.get('p');
@@ -1353,6 +1362,7 @@
           h('button', { class: 'btn', type: 'button', onclick: backToSeries }, t('back_to_series'))));
       col.appendChild(end);
       body.appendChild(col);
+      setZoomTarget(col);
 
       io = new IntersectionObserver(function (es) {
         es.forEach(function (e) {
@@ -1393,6 +1403,216 @@
     }
     function wtStep(frac) { body.scrollBy({ top: frac * body.clientHeight, behavior: 'smooth' }); userMoved = true; }
 
+    /* ================= ZOOM / PAN ================= */
+    function isZoomed() { return zScale > ZOOM_EPS; }
+    function setZoomTarget(el) {
+      if (zoomEl && zoomEl !== el) {
+        zoomEl.style.transform = '';
+        zoomEl.classList.remove('rd-zoom-target');
+      }
+      zoomEl = el || null;
+      if (zoomEl) zoomEl.classList.add('rd-zoom-target');
+      applyZoom();
+    }
+    function applyZoom() {
+      if (zoomEl) {
+        if (zScale <= 1.001 && Math.abs(zX) < 0.5 && Math.abs(zY) < 0.5) {
+          zoomEl.style.transform = '';
+        } else {
+          zoomEl.style.transform = 'translate(' + zX + 'px,' + zY + 'px) scale(' + zScale + ')';
+        }
+      }
+      rd.classList.toggle('zoomed', isZoomed());
+      body.classList.toggle('zoomed', isZoomed());
+    }
+    /* Untransformed top-left of zoomEl relative to the reader body (layout, not painted). */
+    function zoomOffset() {
+      var x = 0, y = 0, el = zoomEl;
+      while (el && el !== body) {
+        x += el.offsetLeft;
+        y += el.offsetTop;
+        el = el.offsetParent;
+      }
+      return { x: x, y: y };
+    }
+    function clampPan() {
+      if (!zoomEl || zScale <= 1) { zX = 0; zY = 0; return; }
+      var bw = body.clientWidth, bh = body.clientHeight;
+      var w = zoomEl.offsetWidth * zScale, h = zoomEl.offsetHeight * zScale;
+      var o = zoomOffset();
+      if (w <= bw) zX = -o.x + (bw - w) / 2;
+      else zX = clamp(zX, -o.x + bw - w, -o.x);
+      if (h <= bh) zY = -o.y + (bh - h) / 2;
+      else zY = clamp(zY, -o.y + bh - h, -o.y);
+    }
+    function resetZoom() {
+      zScale = 1; zX = 0; zY = 0;
+      pinch = pan = null;
+      applyZoom();
+    }
+    function zoomAt(clientX, clientY, nextScale) {
+      if (!zoomEl) return;
+      var br = body.getBoundingClientRect();
+      var o = zoomOffset();
+      var baseLeft = br.left + o.x, baseTop = br.top + o.y;
+      var prev = zScale || 1;
+      nextScale = clamp(nextScale, 1, ZOOM_MAX);
+      zScale = nextScale;
+      zX = clientX - baseLeft - (clientX - baseLeft - zX) * (nextScale / prev);
+      zY = clientY - baseTop - (clientY - baseTop - zY) * (nextScale / prev);
+      if (zScale <= 1.001) { zScale = 1; zX = 0; zY = 0; }
+      else clampPan();
+      applyZoom();
+    }
+    function onZoomTouchStart(e) {
+      if (isPdf || destroyed || !zoomEl) return;
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        pan = null;
+        var a = e.touches[0], b = e.touches[1];
+        var br = body.getBoundingClientRect();
+        var o = zoomOffset();
+        if (stage) stage.scrollTop = 0;
+        pinch = {
+          dist: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1,
+          scale: zScale,
+          mx: (a.clientX + b.clientX) / 2,
+          my: (a.clientY + b.clientY) / 2,
+          x: zX,
+          y: zY,
+          baseLeft: br.left + o.x,
+          baseTop: br.top + o.y
+        };
+        swallowClick = true;
+        return;
+      }
+      if (e.touches.length === 1 && isZoomed()) {
+        e.preventDefault();
+        var t = e.touches[0];
+        pan = { x: t.clientX, y: t.clientY, ox: zX, oy: zY, moved: false };
+        swallowClick = true;
+      }
+    }
+    function onZoomTouchMove(e) {
+      if (!zoomEl) return;
+      if (pinch && e.touches.length >= 2) {
+        e.preventDefault();
+        var a = e.touches[0], b = e.touches[1];
+        var dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1;
+        var mx = (a.clientX + b.clientX) / 2, my = (a.clientY + b.clientY) / 2;
+        var next = clamp(pinch.scale * (dist / pinch.dist), 1, ZOOM_MAX);
+        zScale = next;
+        zX = mx - pinch.baseLeft - (pinch.mx - pinch.baseLeft - pinch.x) * (next / pinch.scale);
+        zY = my - pinch.baseTop - (pinch.my - pinch.baseTop - pinch.y) * (next / pinch.scale);
+        if (zScale <= 1.001) { zScale = 1; zX = 0; zY = 0; }
+        else clampPan();
+        applyZoom();
+        return;
+      }
+      if (pan && e.touches.length === 1 && isZoomed()) {
+        e.preventDefault();
+        var t = e.touches[0];
+        var dx = t.clientX - pan.x, dy = t.clientY - pan.y;
+        if (Math.abs(dx) > 2 || Math.abs(dy) > 2) pan.moved = true;
+        zX = pan.ox + dx;
+        zY = pan.oy + dy;
+        clampPan();
+        applyZoom();
+      }
+    }
+    function onZoomTouchEnd(e) {
+      var endedPinch = false, endedPan = false;
+      if (pinch && e.touches.length < 2) {
+        pinch = null;
+        endedPinch = true;
+        if (zScale <= ZOOM_EPS) resetZoom();
+        else { clampPan(); applyZoom(); }
+        setTimeout(function () { swallowClick = false; }, 280);
+      }
+      if (pan && e.touches.length === 0) {
+        endedPan = !!pan.moved;
+        pan = null;
+        if (endedPan) {
+          swallowClick = true;
+          setTimeout(function () { swallowClick = false; }, 280);
+        } else {
+          setTimeout(function () { swallowClick = false; }, 280);
+        }
+      }
+      /* double-tap → reset zoom & re-enable nav zones */
+      if (!endedPinch && !endedPan && e.changedTouches && e.changedTouches.length === 1 && e.touches.length === 0) {
+        var t = e.changedTouches[0];
+        var now = Date.now();
+        if (now - lastTap < 320 && Math.hypot(t.clientX - lastTapX, t.clientY - lastTapY) < 36) {
+          lastTap = 0;
+          if (isZoomed()) {
+            resetZoom();
+            swallowClick = true;
+            setTimeout(function () { swallowClick = false; }, 350);
+          }
+        } else {
+          lastTap = now; lastTapX = t.clientX; lastTapY = t.clientY;
+        }
+      }
+    }
+    function onZoomWheel(e) {
+      if (isPdf || destroyed || !zoomEl) return;
+      if (e.ctrlKey) {
+        e.preventDefault();
+        zoomAt(e.clientX, e.clientY, zScale * (e.deltaY < 0 ? 1.12 : 1 / 1.12));
+        return;
+      }
+      if (!isZoomed()) return;
+      e.preventDefault();
+      zX -= e.deltaX;
+      zY -= e.deltaY;
+      clampPan();
+      applyZoom();
+    }
+    function onZoomPointerDown(e) {
+      if (isPdf || destroyed || !zoomEl || e.pointerType === 'touch') return;
+      if (!isZoomed() || e.button !== 0) return;
+      pan = { x: e.clientX, y: e.clientY, ox: zX, oy: zY, moved: false, ptr: e.pointerId };
+      try { body.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    }
+    function onZoomPointerMove(e) {
+      if (!pan || pan.ptr !== e.pointerId || e.pointerType === 'touch') return;
+      var dx = e.clientX - pan.x, dy = e.clientY - pan.y;
+      if (Math.abs(dx) > 2 || Math.abs(dy) > 2) pan.moved = true;
+      zX = pan.ox + dx;
+      zY = pan.oy + dy;
+      clampPan();
+      applyZoom();
+    }
+    function onZoomPointerUp(e) {
+      if (!pan || pan.ptr !== e.pointerId) return;
+      var wasPan = pan.moved;
+      pan = null;
+      if (wasPan) {
+        swallowClick = true;
+        setTimeout(function () { swallowClick = false; }, 280);
+      }
+    }
+    function onZoomDblClick(e) {
+      if (isPdf || destroyed || !zoomEl) return;
+      if (isZoomed()) {
+        e.preventDefault();
+        resetZoom();
+        swallowClick = true;
+        setTimeout(function () { swallowClick = false; }, 350);
+      }
+    }
+    body.addEventListener('touchstart', onZoomTouchStart, { passive: false });
+    body.addEventListener('touchmove', onZoomTouchMove, { passive: false });
+    body.addEventListener('touchend', onZoomTouchEnd, { passive: true });
+    body.addEventListener('touchcancel', onZoomTouchEnd, { passive: true });
+    body.addEventListener('wheel', onZoomWheel, { passive: false });
+    body.addEventListener('pointerdown', onZoomPointerDown);
+    body.addEventListener('pointermove', onZoomPointerMove);
+    body.addEventListener('pointerup', onZoomPointerUp);
+    body.addEventListener('pointercancel', onZoomPointerUp);
+    body.addEventListener('dblclick', onZoomDblClick);
+
     /* ================= PAGED ================= */
     var preCache = {};
     function preload(i) {
@@ -1402,19 +1622,25 @@
     function buildPaged() {
       body.className = 'rd-body pgd pgd-' + mode;
       stage = h('div', { class: 'pg-stage' });
+      var zoomWrap = h('div', { class: 'pg-zoom' });
       stageImg = h('img', { class: 'pg-img', alt: '', draggable: false });
       stageImg.addEventListener('load', function () { stage.classList.remove('busy'); });
       stageImg.addEventListener('error', function () { stage.classList.remove('busy'); toast(t('page_failed'), 'err'); });
-      stage.appendChild(stageImg);
+      zoomWrap.appendChild(stageImg);
+      stage.appendChild(zoomWrap);
       body.appendChild(stage);
+      setZoomTarget(zoomWrap);
       showPage(idx);
       body.addEventListener('touchstart', onTouchStart, { passive: true });
       body.addEventListener('touchend', onTouchEnd, { passive: true });
     }
     var tsx = 0, tsy = 0, tst = 0;
-    function onTouchStart(e) { var p = e.changedTouches[0]; tsx = p.clientX; tsy = p.clientY; tst = Date.now(); }
+    function onTouchStart(e) {
+      if (isZoomed() || e.touches.length > 1) return;
+      var p = e.changedTouches[0]; tsx = p.clientX; tsy = p.clientY; tst = Date.now();
+    }
     function onTouchEnd(e) {
-      if (mode === 'vertical') return;
+      if (mode === 'vertical' || isZoomed()) return;
       var p = e.changedTouches[0], dx = p.clientX - tsx, dy = p.clientY - tsy;
       if (Date.now() - tst < 600 && Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.5) {
         swallowClick = true; setTimeout(function () { swallowClick = false; }, 350);
@@ -1423,6 +1649,7 @@
       }
     }
     function showPage(i) {
+      resetZoom();
       setIdx(i, 0);
       var next = pageUrl(idx);
       if (stageImg.getAttribute('src') !== next) {
@@ -1455,6 +1682,7 @@
     var swallowClick = false;
     body.addEventListener('click', function (e) {
       if (swallowClick || isPdf || e.target.closest('.wt-end') || e.target.closest('.retry')) return;
+      if (isZoomed()) return; /* nav zones off while zoomed — double-tap resets */
       if (mode === 'webtoon') { setChrome(!chromeOn); userMoved = true; return; }
       var r = body.getBoundingClientRect();
       var x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
@@ -1479,6 +1707,7 @@
     function jumpTo(i) {
       i = clamp(i, 0, Math.max(0, n - 1));
       userMoved = true;
+      resetZoom();
       if (mode === 'webtoon') { idx = i; ratio = 0; syncWindow(); scrollToPage(i, 0); updateUi(); saveSoon(); }
       else showPage(i);
     }
@@ -1551,6 +1780,8 @@
       if (io) { io.disconnect(); io = null; }
       winLo = winHi = -1;
       els = []; stage = stageImg = null;
+      resetZoom();
+      setZoomTarget(null);
       body.removeEventListener('scroll', onWtScroll);
       ['wheel', 'touchstart', 'pointerdown'].forEach(function (ev) { body.removeEventListener(ev, markMoved); });
       body.removeEventListener('touchstart', onTouchStart);
@@ -1567,6 +1798,7 @@
       var k = e.key, handled = true;
       if (k === 'Escape') {
         if (document.fullscreenElement) return;
+        if (isZoomed()) { resetZoom(); return; }
         backToSeries();
       } else if (k === 'f' || k === 'F') toggleFav();
       else if (k === 'm' || k === 'M') { if (!isPdf) setMode(MODES[(MODES.indexOf(mode) + 1) % MODES.length]); }
@@ -1621,6 +1853,19 @@
       destroyed = true;
       clearTimeout(hideTimer); cancelAnimationFrame(sliderRaf);
       clearTapZones();
+      resetZoom();
+      setZoomTarget(null);
+      body.removeEventListener('touchstart', onZoomTouchStart);
+      body.removeEventListener('touchmove', onZoomTouchMove);
+      body.removeEventListener('touchend', onZoomTouchEnd);
+      body.removeEventListener('touchcancel', onZoomTouchEnd);
+      body.removeEventListener('wheel', onZoomWheel);
+      body.removeEventListener('pointerdown', onZoomPointerDown);
+      body.removeEventListener('pointermove', onZoomPointerMove);
+      body.removeEventListener('pointerup', onZoomPointerUp);
+      body.removeEventListener('pointercancel', onZoomPointerUp);
+      body.removeEventListener('dblclick', onZoomDblClick);
+      if (vpMeta && vpPrev != null) vpMeta.setAttribute('content', vpPrev);
       document.removeEventListener('keydown', onKey);
       document.removeEventListener('visibilitychange', onHide);
       window.removeEventListener('pagehide', flush);

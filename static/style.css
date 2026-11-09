@@ -506,6 +506,15 @@ body.is-reader .toasts { bottom: calc(76px + var(--safe-b)); }
 }
 
 .rd-body { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; outline: none; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.rd-body.zoomed { overflow: hidden; touch-action: none; }
+.rd.zoomed .rd-zones { display: none; }
+/* While zoomed, chrome stays non-interactive even if briefly visible */
+.rd.zoomed.chrome-off .rd-top,
+.rd.zoomed.chrome-off .rd-bot { pointer-events: none; }
+.rd-zoom-target, .pg-zoom, .wt-col.rd-zoom-target {
+  transform-origin: 0 0;
+  will-change: transform;
+}
 
 /* webtoon */
 .wt-col { position: relative; max-width: 860px; margin: 0 auto; background: #0a0f1c; }
@@ -521,10 +530,16 @@ body.is-reader .toasts { bottom: calc(76px + var(--safe-b)); }
 .wt-end { padding: 64px 20px calc(110px + var(--safe-b)); text-align: center; display: grid; gap: 18px; background: var(--ink); }
 
 /* paged */
-.rd-body.pgd, .rd-body.pdfv { overflow: hidden; }
-.pg-stage { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.rd-body.pgd, .rd-body.pdfv { overflow: hidden; touch-action: none; }
+.pg-stage { position: absolute; inset: 0; overflow: hidden; }
+.pg-zoom {
+  width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+  transform-origin: 0 0;
+}
 .pg-img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; user-select: none; -webkit-user-drag: none; }
-.pgd-vertical .pg-stage { display: block; overflow-y: auto; overflow-x: hidden; }
+.pgd-vertical .pg-stage { overflow-y: auto; overflow-x: hidden; touch-action: pan-y; }
+.rd-body.pgd-vertical.zoomed .pg-stage { overflow: hidden; touch-action: none; }
+.pgd-vertical .pg-zoom { display: block; height: auto; min-height: 100%; }
 .pgd-vertical .pg-img { display: block; width: 100%; max-width: 900px; max-height: none; margin: 0 auto; }
 .pg-stage.busy::after {
   content: ''; position: absolute; top: 50%; left: 50%; width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 50%;
