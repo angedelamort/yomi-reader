@@ -529,6 +529,31 @@ body.is-reader .toasts { bottom: calc(76px + var(--safe-b)); }
 .wt-pg.err .retry { display: block; font: 600 14px var(--font-ui); color: var(--paper); background: var(--ink-3); border: 1px solid var(--ember); border-radius: 10px; padding: 10px 16px; cursor: pointer; }
 .wt-end { padding: 64px 20px calc(110px + var(--safe-b)); text-align: center; display: grid; gap: 18px; background: var(--ink); }
 
+/* Continuous webtoon: chapter-break "fake page" before the next chapter loads in. */
+.wt-break {
+  position: relative; min-height: min(72vh, 640px); padding: 48px 20px calc(48px + var(--safe-b));
+  display: grid; place-items: center; text-align: center;
+  background:
+    linear-gradient(180deg, #0a0f1c 0%, var(--ink) 28%, var(--ink-2) 100%);
+  border-block: 1px solid var(--line);
+  overflow-anchor: none;
+}
+.wt-break-inner { display: grid; gap: 14px; justify-items: center; max-width: 28rem; width: 100%; }
+.wt-break-kicker {
+  margin: 0; font: 700 11px/1.2 var(--font-ui); letter-spacing: .14em; text-transform: uppercase;
+  color: var(--muted);
+}
+.wt-break-title {
+  margin: 0; font-size: clamp(28px, 7vw, 40px); line-height: 1.15; color: var(--paper);
+}
+.wt-break-hint { margin: 0; font-size: 14px; min-height: 1.4em; }
+.wt-break-hint.busy { display: inline-flex; align-items: center; gap: 10px; color: var(--paper-2); }
+.wt-break-hint .spin {
+  width: 16px; height: 16px; border-width: 2px; margin: 0; flex: none;
+}
+.wt-break .row { margin-top: 6px; flex-wrap: wrap; justify-content: center; }
+.wt-next { position: relative; }
+
 /* paged */
 .rd-body.pgd, .rd-body.pdfv { overflow: hidden; touch-action: none; }
 .pg-stage { position: absolute; inset: 0; overflow: hidden; }

@@ -1151,6 +1151,10 @@
     var userMoved = false, chromeOn = true, hideTimer = 0, destroyed = false;
     var restoreUntil = 0, restoreIdx = 0, restoreRatio = 0;
     var els = [], io = null, lastTop = 0, ticking = false, prefetched = {}, keep = [];
+    /* Continuous webtoon: preload/append next chapter below a break "fake page". */
+    var wtCol = null, wtBreak = null, wtBreakHint = null;
+    var nextFetch = null, nextBundle = null, nextCol = null, nextEls = [];
+    var nextIo = null, adopting = false, breakArmed = false;
     var stage = null, stageImg = null;
     var zonesEl = null, zonesTimer = 0, zonesFadeTimer = 0;
     /* pinch-zoom / pan — when zoomed, tap zones & page turns stay off until reset */
@@ -1193,14 +1197,18 @@
       chSel.appendChild(h('option', { value: on ? chapterId : c.id, selected: on }, (c.number >= 0 ? t('ch_short', { n: fmtNum(c.number) }) + ' — ' : '') + c.title));
     });
     if (!found) chSel.insertBefore(h('option', { value: chapterId, selected: true }, chLabel || ch.title), chSel.firstChild);
-    chSel.addEventListener('change', function () { chSel.blur(); location.hash = '#/read/' + enc(chSel.value); });
+    /* Chapter changes inside the reader replace history so browser Back leaves
+       the reader (usually to the series), instead of stepping chapter-by-chapter. */
+    function readReplace(hash) { location.replace(hash); }
+
+    chSel.addEventListener('change', function () { chSel.blur(); readReplace('#/read/' + enc(chSel.value)); });
 
     var srcSel = null;
     if (ch.alternatives && ch.alternatives.length) {
       srcSel = h('select', { class: 'rd-sel src', 'aria-label': t('source') },
         h('option', { value: chapterId, selected: true }, copyLabel(ch)),
         ch.alternatives.map(function (a) { return h('option', { value: a.id }, copyLabel(a, ch)); }));
-      srcSel.addEventListener('change', function () { srcSel.blur(); location.hash = '#/read/' + enc(srcSel.value) + '?p=0'; });
+      srcSel.addEventListener('change', function () { srcSel.blur(); readReplace('#/read/' + enc(srcSel.value) + '?p=0'); });
     }
 
     var modeSel = h('select', { class: 'rd-sel mode', 'aria-label': t('reader_mode') },
@@ -1222,7 +1230,7 @@
     var rd = h('div', { class: 'rd' + (isPdf ? ' pdf' : '') }, top, body, bot, pill);
     clear(root).appendChild(rd);
 
-    function backToSeries() { location.hash = '#/series/' + enc(seriesId); }
+    function backToSeries() { readReplace('#/series/' + enc(seriesId)); }
     function toggleFullscreen() {
       if (document.fullscreenElement) document.exitFullscreen();
       else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(function () { });
@@ -1280,6 +1288,30 @@
       saveSoon();
     }
 
+    function canContinueNext() {
+      var nx = ch.next;
+      if (!nx || isPdf) return false;
+      var meta = chapters.find(function (c) { return c.id === nx.id; });
+      if (meta && meta.format === 'pdf') return false;
+      return true;
+    }
+    function chapterHeading(linkOrCh) {
+      if (!linkOrCh) return '';
+      var num = linkOrCh.number >= 0 ? t('ch_short', { n: fmtNum(linkOrCh.number) }) : '';
+      var title = linkOrCh.title && !/^(ch(apter)?\.?\s*#?\s*\d|#\s*\d)/i.test(linkOrCh.title) ? linkOrCh.title : '';
+      return [num, title].filter(Boolean).join(' — ') || linkOrCh.title || '';
+    }
+    function setBreakHint(kind, msg) {
+      if (!wtBreakHint) return;
+      clear(wtBreakHint);
+      wtBreakHint.className = 'wt-break-hint muted' + (kind === 'busy' ? ' busy' : '');
+      if (kind === 'busy') {
+        add(wtBreakHint, spinner());
+        add(wtBreakHint, document.createTextNode(msg || t('loading_next_chapter')));
+      } else {
+        add(wtBreakHint, document.createTextNode(msg || t('scroll_for_next')));
+      }
+    }
     function prefetchNext() {
       var nx = ch.next;
       if (!nx || prefetched[nx.id]) return;
@@ -1287,12 +1319,254 @@
       if (isPdf || !meta || meta.format === 'pdf') return;
       prefetched[nx.id] = 1;
       var im = new Image(); im.src = '/api/chapters/' + enc(nx.id) + '/page/0'; keep.push(im);
+      if (mode === 'webtoon' && canContinueNext()) ensureNextChapter();
+    }
+    function ensureNextChapter() {
+      if (!canContinueNext()) return Promise.resolve(null);
+      if (nextBundle) return Promise.resolve(nextBundle);
+      if (nextFetch) return nextFetch;
+      var nxId = ch.next.id;
+      setBreakHint('busy', t('loading_next_chapter'));
+      nextFetch = Promise.all([
+        api('/api/chapters/' + enc(nxId)),
+        api('/api/chapters/' + enc(nxId) + '/pages')
+      ]).then(function (pair) {
+        if (destroyed) return null;
+        var detail = pair[0], pgs = pair[1] || [];
+        if (!detail || detail.format === 'pdf') {
+          setBreakHint('text', t('scroll_for_next'));
+          return null;
+        }
+        if (!pgs.length) {
+          setBreakHint('text', t('no_pages'));
+          return null;
+        }
+        nextBundle = { detail: detail, pages: pgs };
+        var i, im;
+        for (i = 0; i < Math.min(6, pgs.length); i++) {
+          im = new Image();
+          im.decoding = 'async';
+          im.src = '/api/chapters/' + enc(nxId) + '/page/' + i;
+          keep.push(im);
+        }
+        setBreakHint('text', t('scroll_for_next'));
+        if (breakArmed && !nextCol) appendNextPages(nextBundle);
+        return nextBundle;
+      }).catch(function () {
+        nextFetch = null;
+        if (!destroyed) setBreakHint('text', t('next_chapter_failed'));
+        return null;
+      });
+      return nextFetch;
+    }
+    function mountNextPage(i, eager) {
+      var pg = nextEls[i];
+      if (!pg || !nextBundle) return;
+      var img = pg._img;
+      var nxId = nextBundle.detail.id;
+      if (!img) {
+        img = new Image();
+        img.decoding = 'async';
+        img.alt = t('page_n', { n: i + 1 });
+        img.draggable = false;
+        img.loading = eager ? 'eager' : 'lazy';
+        img.onload = function () {
+          if (img.naturalWidth) pg.style.aspectRatio = img.naturalWidth + ' / ' + img.naturalHeight;
+          pg.classList.add('ok'); pg.classList.remove('err');
+        };
+        img.onerror = function () { pg.classList.add('err'); };
+        img.src = '/api/chapters/' + enc(nxId) + '/page/' + i;
+        pg.appendChild(img);
+        pg._img = img;
+      } else if (eager && img.loading === 'lazy') img.loading = 'eager';
+    }
+    function appendNextPages(bundle) {
+      if (!wtCol || nextCol || !bundle || !bundle.pages.length || adopting) return;
+      nextCol = h('div', { class: 'wt-next' });
+      nextEls = [];
+      var i, nn = bundle.pages.length;
+      for (i = 0; i < nn; i++) {
+        var pg = h('div', { class: 'wt-pg', 'data-next-i': i });
+        var rb = h('button', { class: 'retry', type: 'button', onclick: (function (k) {
+          return function (e) {
+            e.stopPropagation();
+            var p = nextEls[k];
+            if (p && p._img) { p._img.onload = p._img.onerror = null; p._img.remove(); p._img = null; p.classList.remove('ok', 'err'); }
+            mountNextPage(k, true);
+          };
+        })(i) }, t('retry_page'));
+        pg.appendChild(rb);
+        nextEls.push(pg);
+        nextCol.appendChild(pg);
+      }
+      wtCol.appendChild(nextCol);
+      for (i = 0; i < Math.min(10, nn); i++) mountNextPage(i, i < 6);
+      if (nextIo) nextIo.disconnect();
+      nextIo = new IntersectionObserver(function (es) {
+        es.forEach(function (e) {
+          if (!e.isIntersecting) return;
+          var i = +e.target.getAttribute('data-next-i');
+          if (i === 0) adoptNextChapter();
+          else if (i > 0 && i < nextEls.length) {
+            var lo = Math.max(0, i - 2), hi = Math.min(nextEls.length - 1, i + 6), j;
+            for (j = lo; j <= hi; j++) mountNextPage(j, j <= i + 3);
+          }
+        });
+      }, { root: body, rootMargin: '-45% 0px -45% 0px' });
+      nextEls.forEach(function (p) { nextIo.observe(p); });
+    }
+    function syncChapterChrome() {
+      chLabel = ch.number >= 0 ? t('ch_short', { n: fmtNum(ch.number) }) : '';
+      chTitle = ch.title && !/^(ch(apter)?\.?\s*#?\s*\d|#\s*\d)/i.test(ch.title) ? ch.title : '';
+      var titleBox = top.querySelector('.rd-title');
+      if (titleBox) {
+        clear(titleBox);
+        add(titleBox, h('strong', null, ch.seriesTitle || ''));
+        add(titleBox, h('span', null, [chLabel, chTitle].filter(Boolean).join(' · ') || ch.title));
+      }
+      prevBtn.disabled = !ch.prev;
+      var i, opt, foundSel = false;
+      for (i = 0; i < chSel.options.length; i++) {
+        opt = chSel.options[i];
+        opt.selected = opt.value === chapterId;
+        if (opt.selected) foundSel = true;
+      }
+      if (!foundSel) {
+        chSel.insertBefore(h('option', { value: chapterId, selected: true }, chapterHeading(ch) || ch.title), chSel.firstChild);
+      }
+      if (srcSel && srcSel.parentNode) {
+        srcSel.remove();
+        srcSel = null;
+      }
+      if (ch.alternatives && ch.alternatives.length) {
+        srcSel = h('select', { class: 'rd-sel src', 'aria-label': t('source') },
+          h('option', { value: chapterId, selected: true }, copyLabel(ch)),
+          ch.alternatives.map(function (a) { return h('option', { value: a.id }, copyLabel(a, ch)); }));
+        srcSel.addEventListener('change', function () { srcSel.blur(); readReplace('#/read/' + enc(srcSel.value) + '?p=0'); });
+        var tools = top.querySelector('.rd-tools');
+        if (tools) tools.insertBefore(srcSel, modeSel);
+      }
+      slider.max = Math.max(1, n);
+      slider.value = idx + 1;
+      document.title = (ch.seriesTitle || 'Yomi') + ' ' + (chLabel || '') + ' · Yomi';
+      updateUi();
+    }
+    function placeChapterEnd() {
+      if (!wtCol) return;
+      if (wtBreak && wtBreak.parentNode) wtBreak.remove();
+      wtBreak = null;
+      wtBreakHint = null;
+      breakArmed = false;
+      if (!ch.next) {
+        wtCol.appendChild(h('div', { class: 'wt-end' },
+          h('p', { class: 'muted' }, t('end_of_series')),
+          h('div', { class: 'row center' },
+            h('button', { class: 'btn', type: 'button', onclick: backToSeries }, t('back_to_series')))));
+        return;
+      }
+      if (!canContinueNext()) {
+        wtCol.appendChild(h('div', { class: 'wt-end' },
+          h('p', { class: 'muted' }, t('end_of_chapter')),
+          h('div', { class: 'row center' },
+            h('button', { class: 'btn primary lg', type: 'button', onclick: goNext }, t('next_chapter'), icon('right')),
+            h('button', { class: 'btn', type: 'button', onclick: backToSeries }, t('back_to_series')))));
+        return;
+      }
+      wtBreakHint = h('p', { class: 'wt-break-hint muted' }, t('scroll_for_next'));
+      wtBreak = h('div', { class: 'wt-break', 'data-break': '1' },
+        h('div', { class: 'wt-break-inner' },
+          h('p', { class: 'wt-break-kicker' }, t('end_of_chapter')),
+          h('h2', { class: 'wt-break-title display' }, chapterHeading(ch.next)),
+          wtBreakHint,
+          h('div', { class: 'row center' },
+            h('button', { class: 'btn primary', type: 'button', onclick: goNext }, t('next_chapter'), icon('right')),
+            h('button', { class: 'btn', type: 'button', onclick: backToSeries }, t('back_to_series')))));
+      wtCol.appendChild(wtBreak);
+    }
+    function adoptNextChapter() {
+      if (adopting || destroyed || !nextBundle || !nextCol || !wtCol) return;
+      adopting = true;
+      resetZoom();
+      var bundle = nextBundle;
+      var nx = bundle.detail;
+      var newPages = bundle.pages;
+      var newEls = nextEls.slice();
+      var anchorTop = nextCol.offsetTop;
+      var keepScroll = body.scrollTop;
+
+      completed = true;
+      flush();
+
+      if (io) { io.disconnect(); io = null; }
+      if (nextIo) { nextIo.disconnect(); nextIo = null; }
+      winLo = winHi = -1;
+
+      while (wtCol.firstChild && wtCol.firstChild !== nextCol) wtCol.removeChild(wtCol.firstChild);
+      while (nextCol.firstChild) wtCol.appendChild(nextCol.firstChild);
+      nextCol.remove();
+      nextCol = null;
+      nextEls = [];
+      nextBundle = null;
+      nextFetch = null;
+      wtBreak = null;
+      wtBreakHint = null;
+      breakArmed = false;
+
+      body.scrollTop = Math.max(0, keepScroll - anchorTop);
+
+      chapterId = nx.id;
+      ch = nx;
+      pages = newPages;
+      n = pages.length;
+      pageUrl = function (i) { return '/api/chapters/' + enc(chapterId) + '/page/' + i; };
+      els = newEls;
+      for (var i = 0; i < els.length; i++) {
+        els[i].removeAttribute('data-next-i');
+        els[i].setAttribute('data-i', String(i));
+      }
+      idx = 0;
+      if (els[0]) ratio = clamp((body.scrollTop - els[0].offsetTop) / Math.max(1, els[0].offsetHeight), 0, 1);
+      else ratio = 0;
+      /* If we landed past page 0, pick the page nearest the viewport center. */
+      if (els.length) {
+        var mid = body.scrollTop + body.clientHeight * 0.5, best = 0, bestDist = Infinity, pi, pEl, cy, dist;
+        for (pi = 0; pi < els.length; pi++) {
+          pEl = els[pi];
+          cy = pEl.offsetTop + pEl.offsetHeight * 0.5;
+          dist = Math.abs(cy - mid);
+          if (dist < bestDist) { bestDist = dist; best = pi; }
+        }
+        idx = best;
+        ratio = clamp((body.scrollTop - els[idx].offsetTop) / Math.max(1, els[idx].offsetHeight), 0, 1);
+      }
+      completed = false;
+      prefetched = {};
+      adopting = false;
+
+      io = new IntersectionObserver(function (es) {
+        es.forEach(function (e) {
+          if (!e.isIntersecting) return;
+          var i = +e.target.getAttribute('data-i');
+          if (i !== idx) { idx = i; updateUi(); syncWindow(); saveSoon(); }
+        });
+      }, { root: body, rootMargin: '-50% 0px -50% 0px' });
+      els.forEach(function (p) { io.observe(p); });
+      placeChapterEnd();
+      setZoomTarget(wtCol);
+      syncWindow();
+      syncChapterChrome();
+      saveSoon();
+
+      /* Replace the URL in place — do not push history, or Back would walk
+         chapters instead of leaving the reader. No hashchange → no remount. */
+      var wantHash = '#/read/' + enc(chapterId);
+      if (location.hash.split('?')[0] !== wantHash) history.replaceState(null, '', wantHash);
     }
 
     /* ---- chapter navigation ---- */
     function goChapter(link, last) {
       if (!link) { toast(last ? t('first_chapter') : t('last_chapter')); return; }
-      location.hash = '#/read/' + enc(link.id) + (last ? '?p=last' : '');
+      readReplace('#/read/' + enc(link.id) + (last ? '?p=last' : ''));
     }
     function goNext() {
       if (!ch.next) {
@@ -1302,7 +1576,7 @@
       }
       completed = true;
       flush();
-      location.hash = '#/read/' + enc(ch.next.id) + '?p=0';
+      readReplace('#/read/' + enc(ch.next.id) + '?p=0');
     }
 
     /* ================= WEBTOON ================= */
@@ -1347,22 +1621,20 @@
     }
     function buildWebtoon() {
       body.className = 'rd-body wt';
-      var col = h('div', { class: 'wt-col' });
+      nextFetch = null; nextBundle = null; nextCol = null; nextEls = [];
+      adopting = false; breakArmed = false;
+      if (nextIo) { nextIo.disconnect(); nextIo = null; }
+      wtCol = h('div', { class: 'wt-col' });
       els = [];
       for (var i = 0; i < n; i++) {
         var pg = h('div', { class: 'wt-pg', 'data-i': i });
         var rb = h('button', { class: 'retry', type: 'button', onclick: (function (k) { return function (e) { e.stopPropagation(); unmountPage(k); mountPage(k, true); }; })(i) }, t('retry_page'));
         pg.appendChild(rb);
-        els.push(pg); col.appendChild(pg);
+        els.push(pg); wtCol.appendChild(pg);
       }
-      var end = h('div', { class: 'wt-end' },
-        h('p', { class: 'muted' }, ch.next ? t('end_of_chapter') : t('end_of_series')),
-        h('div', { class: 'row center' },
-          ch.next ? h('button', { class: 'btn primary lg', type: 'button', onclick: goNext }, t('next_chapter'), icon('right')) : null,
-          h('button', { class: 'btn', type: 'button', onclick: backToSeries }, t('back_to_series'))));
-      col.appendChild(end);
-      body.appendChild(col);
-      setZoomTarget(col);
+      placeChapterEnd();
+      body.appendChild(wtCol);
+      setZoomTarget(wtCol);
 
       io = new IntersectionObserver(function (es) {
         es.forEach(function (e) {
@@ -1396,9 +1668,25 @@
         if (Math.abs(d) > 14) lastTop = top;
         var pg = els[idx];
         if (pg) ratio = clamp((top - pg.offsetTop) / Math.max(1, pg.offsetHeight), 0, 1);
-        var atEnd = top + body.clientHeight >= body.scrollHeight - 120;
-        if (atEnd !== completed && (userMoved || atEnd)) { completed = atEnd; saveSoon(); }
-        if (atEnd && !chromeOn && userMoved) setChrome(true);
+        /* Complete once the last page of *this* chapter is mostly past — not the
+           scroll container end (next chapter may already be appended below). */
+        var pastCurrent = false;
+        if (n && els[n - 1]) {
+          var lastPg = els[n - 1];
+          pastCurrent = top + body.clientHeight >= lastPg.offsetTop + lastPg.offsetHeight * 0.85;
+        }
+        if (pastCurrent !== completed && (userMoved || pastCurrent)) { completed = pastCurrent; saveSoon(); }
+        if (pastCurrent && !chromeOn && userMoved && !nextCol) setChrome(true);
+
+        if (wtBreak && canContinueNext() && !adopting) {
+          var br = wtBreak.getBoundingClientRect();
+          var bb = body.getBoundingClientRect();
+          if (br.top < bb.bottom + bb.height * 2) {
+            breakArmed = true;
+            ensureNextChapter();
+          }
+          if (nextBundle && !nextCol && br.top < bb.bottom + 40) appendNextPages(nextBundle);
+        }
       });
     }
     function wtStep(frac) { body.scrollBy({ top: frac * body.clientHeight, behavior: 'smooth' }); userMoved = true; }
@@ -1681,7 +1969,7 @@
     /* ================= interaction ================= */
     var swallowClick = false;
     body.addEventListener('click', function (e) {
-      if (swallowClick || isPdf || e.target.closest('.wt-end') || e.target.closest('.retry')) return;
+      if (swallowClick || isPdf || e.target.closest('.wt-end') || e.target.closest('.wt-break') || e.target.closest('.retry')) return;
       if (isZoomed()) return; /* nav zones off while zoomed — double-tap resets */
       if (mode === 'webtoon') { setChrome(!chromeOn); userMoved = true; return; }
       var r = body.getBoundingClientRect();
@@ -1778,8 +2066,12 @@
     }
     function teardownBody() {
       if (io) { io.disconnect(); io = null; }
+      if (nextIo) { nextIo.disconnect(); nextIo = null; }
       winLo = winHi = -1;
       els = []; stage = stageImg = null;
+      wtCol = null; wtBreak = null; wtBreakHint = null;
+      nextFetch = null; nextBundle = null; nextCol = null; nextEls = [];
+      adopting = false; breakArmed = false;
       resetZoom();
       setZoomTarget(null);
       body.removeEventListener('scroll', onWtScroll);
