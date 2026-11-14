@@ -131,6 +131,56 @@
     return (Math.round(n * 100) / 100).toString();
   }
 
+  /** Integer chapter holes between the lowest and highest numbered chapter (decimals / unnumbered ignored). */
+  function missingChapterInts(chapters) {
+    var have = Object.create(null);
+    var min = Infinity, max = -Infinity, n = 0;
+    for (var i = 0; i < chapters.length; i++) {
+      var num = chapters[i].number;
+      if (!(num >= 0)) continue;
+      if (Math.abs(num - Math.round(num)) > 1e-9) continue;
+      var k = Math.round(num);
+      if (have[k]) continue;
+      have[k] = 1;
+      if (k < min) min = k;
+      if (k > max) max = k;
+      n++;
+    }
+    if (n < 2 || max - min + 1 === n) return [];
+    var missing = [];
+    for (var x = min; x <= max; x++) {
+      if (!have[x]) missing.push(x);
+    }
+    return missing;
+  }
+
+  /** Compact "3–5, 8, 12–14" list; truncates long runs with "+N more". */
+  function fmtNumRanges(nums, maxParts) {
+    if (!nums || !nums.length) return '';
+    maxParts = maxParts || 24;
+    var parts = [];
+    var i = 0;
+    while (i < nums.length) {
+      var start = nums[i], end = start;
+      while (i + 1 < nums.length && nums[i + 1] === end + 1) {
+        i++;
+        end = nums[i];
+      }
+      parts.push(start === end ? String(start) : start + '\u2013' + end);
+      i++;
+    }
+    if (parts.length <= maxParts) return parts.join(', ');
+    var shown = parts.slice(0, maxParts - 1);
+    var rest = 0;
+    for (var j = maxParts - 1; j < parts.length; j++) {
+      var p = parts[j];
+      var dash = p.indexOf('\u2013');
+      if (dash < 0) rest++;
+      else rest += (+p.slice(dash + 1) - +p.slice(0, dash) + 1);
+    }
+    return shown.join(', ') + ', ' + t('missing_more', { n: rest });
+  }
+
   /* ================================================================
    * State + API
    * ================================================================ */
@@ -707,6 +757,7 @@
     clear(root);
 
     var asc = false;
+    var missing = missingChapterInts(chapters);
     var favBtn, resumeBox = h('div', { class: 'cta' }), list = h('div', { class: 'chlist' });
 
     function paintFav() {
@@ -748,9 +799,12 @@
       clear(list);
       var curNum = d.progress ? d.progress.chapterNumber : null;
       var curId = d.resume && !d.resume.finished ? d.resume.chapterId : null;
-      var rows = asc ? chapters : chapters.slice().reverse();
       var frag = document.createDocumentFragment();
-      rows.forEach(function (c) {
+      var showGaps = missing.length && missing.length <= 80;
+      var missSet = showGaps ? Object.create(null) : null;
+      if (missSet) for (var mi = 0; mi < missing.length; mi++) missSet[missing[mi]] = 1;
+
+      function appendChapter(c) {
         var isRead = d.progress && c.number >= 0 && (c.number < curNum || (c.number === curNum && d.progress.completed));
         var isCur = curId && (c.id === curId || (c.alternatives || []).some(function (a) { return a.id === curId; }));
         var alts = c.alternatives || [];
@@ -767,7 +821,42 @@
               return h('a', { class: 'alt', href: '#/read/' + enc(a.id) },
                 copyLabel(a, c), a.pageCount ? ' · ' + a.pageCount : '');
             })) : null));
-      });
+      }
+
+      function appendMissing(n) {
+        frag.appendChild(h('div', { class: 'chrow gap', 'aria-label': t('ch_short', { n: n }) },
+          h('div', { class: 'chmain' },
+            h('span', { class: 'chn' }, fmtNum(n)),
+            h('span', { class: 'cht' }, t('missing_chapter')),
+            h('span', { class: 'chd' }),
+            h('span', { class: 'chm' }),
+            h('span', { class: 'chk' }))));
+      }
+
+      if (!showGaps) {
+        (asc ? chapters : chapters.slice().reverse()).forEach(appendChapter);
+      } else {
+        // Walk ascending numbers, inject hole rows, then reverse for newest-first.
+        var ordered = [];
+        var prevInt = null;
+        chapters.forEach(function (c) {
+          if (c.number >= 0 && Math.abs(c.number - Math.round(c.number)) <= 1e-9) {
+            var k = Math.round(c.number);
+            if (prevInt != null && k > prevInt + 1) {
+              for (var g = prevInt + 1; g < k; g++) {
+                if (missSet[g]) ordered.push({ gap: g });
+              }
+            }
+            prevInt = k;
+          }
+          ordered.push({ ch: c });
+        });
+        if (!asc) ordered.reverse();
+        ordered.forEach(function (row) {
+          if (row.gap != null) appendMissing(row.gap);
+          else appendChapter(row.ch);
+        });
+      }
       list.appendChild(frag);
     }
 
@@ -814,6 +903,13 @@
           return h('li', { class: i === 0 ? 'best' : '' }, s.name, h('em', null, t('n_chapters', { n: s.chapterCount }, s.chapterCount)));
         }))) : null);
 
+    var missingBox = null;
+    if (missing.length) {
+      missingBox = h('div', { class: 'ch-missing', role: 'status', title: t('missing_chapters_hint') },
+        h('strong', null, t('missing_chapters', { n: missing.length }, missing.length)),
+        h('span', { class: 'ch-missing-nums' }, fmtNumRanges(missing)));
+    }
+
     var page = h('div', { class: 'page series' },
       h('div', { class: 'hero' },
         coverImg ? h('div', { class: 'hero-bg', style: { backgroundImage: 'url("' + coverBust + '")' }, 'aria-hidden': 'true' }) : null,
@@ -822,6 +918,7 @@
         h('div', { class: 'shelf-head' },
           h('h2', { class: 'display' }, t('chapters'), ' ', h('span', { class: 'count' }, chapters.length)),
           h('button', { class: 'btn sm', type: 'button', onclick: function (e) { asc = !asc; e.currentTarget.lastChild.textContent = asc ? t('oldest_first') : t('newest_first'); paintList(); } }, icon('sort', 'xs'), h('span', null, t('newest_first')))),
+        missingBox,
         list));
     root.appendChild(page);
     paintFav(); paintCta(); paintList();
@@ -911,6 +1008,7 @@
       };
       if (!body.title) { err.textContent = t('title_required'); err.hidden = false; return; }
       try {
+        await commitPendingCover();
         await api('/api/admin/series/' + enc(series.id), { method: 'PUT', json: body });
         toast(t('saved'));
         dlg.close();
@@ -920,43 +1018,176 @@
 
     /* ---- cover ---- */
     var coverStatus = h('p', { class: 'muted cover-hint' }, t('cover_pick_hint'));
+    var coverPreview = h('img', { class: 'cover-pending-preview', alt: '', hidden: true });
     var coverBusy = false;
-    async function applyCover(body, isForm) {
-      if (coverBusy) return;
+    var pendingCover = null; /* { kind:'file'|'chapter'|'auto', file?, previewUrl?, chapterId?, label? } */
+
+    function revokePendingCoverUrl() {
+      if (pendingCover && pendingCover.previewUrl) {
+        URL.revokeObjectURL(pendingCover.previewUrl);
+        pendingCover.previewUrl = null;
+      }
+    }
+
+    function paintCoverPending() {
+      Array.prototype.forEach.call(coverGrid.querySelectorAll('.cover-cand'), function (btn) {
+        var on = pendingCover && pendingCover.kind === 'chapter' && btn.getAttribute('data-id') === pendingCover.chapterId;
+        btn.classList.toggle('on', !!on);
+        if (on) btn.setAttribute('aria-pressed', 'true');
+        else btn.removeAttribute('aria-pressed');
+      });
+      if (!pendingCover) {
+        coverStatus.textContent = t('cover_pick_hint');
+        coverPreview.hidden = true;
+        coverPreview.removeAttribute('src');
+        return;
+      }
+      if (pendingCover.kind === 'file') {
+        coverStatus.textContent = t('cover_pending_file');
+        coverPreview.src = pendingCover.previewUrl;
+        coverPreview.hidden = false;
+      } else if (pendingCover.kind === 'chapter') {
+        coverStatus.textContent = t('cover_pending_chapter', { n: pendingCover.label });
+        coverPreview.src = '/api/chapters/' + enc(pendingCover.chapterId) + '/page/0';
+        coverPreview.hidden = false;
+      } else {
+        coverStatus.textContent = t('cover_pending_auto');
+        coverPreview.hidden = true;
+        coverPreview.removeAttribute('src');
+      }
+    }
+
+    function setPendingCover(next) {
+      revokePendingCoverUrl();
+      pendingCover = next;
+      paintCoverPending();
+      if (tab === 'cover') paintPanel();
+    }
+
+    async function commitPendingCover() {
+      if (!pendingCover) return false;
+      if (coverBusy) throw new Error(t('cover_uploading'));
       coverBusy = true;
       coverStatus.textContent = t('cover_uploading');
       try {
-        if (isForm) {
-          var r = await fetch('/api/admin/series/' + enc(series.id) + '/cover', { method: 'PUT', credentials: 'same-origin', body: body });
+        if (pendingCover.kind === 'file') {
+          var fd = new FormData();
+          fd.append('file', pendingCover.file);
+          var r = await fetch('/api/admin/series/' + enc(series.id) + '/cover', { method: 'PUT', credentials: 'same-origin', body: fd });
           var ct = r.headers.get('content-type') || '';
           var res = ct.indexOf('json') >= 0 ? await r.json() : await r.text();
           if (!r.ok) throw new Error((res && res.error) || r.statusText);
+        } else if (pendingCover.kind === 'chapter') {
+          await api('/api/admin/series/' + enc(series.id) + '/cover', { method: 'PUT', json: { chapterId: pendingCover.chapterId } });
         } else {
-          await api('/api/admin/series/' + enc(series.id) + '/cover', { method: 'PUT', json: body });
+          await api('/api/admin/series/' + enc(series.id) + '/cover', { method: 'PUT', json: { auto: true } });
         }
+        revokePendingCoverUrl();
+        pendingCover = null;
+        return true;
+      } catch (e) {
+        paintCoverPending();
+        throw e;
+      } finally {
+        coverBusy = false;
+      }
+    }
+
+    async function saveCover() {
+      try {
+        if (!pendingCover) { dlg.close(); return; }
+        await commitPendingCover();
         toast(t('cover_saved'));
         dlg.close();
         await reloadSeries();
-      } catch (e) { errToast(e); coverStatus.textContent = t('cover_pick_hint'); coverBusy = false; }
+      } catch (e) { errToast(e); }
     }
+
+    function imageFileToPng(file) {
+      return new Promise(function (resolve, reject) {
+        if (!file) { reject(new Error(t('cover_paste_bad'))); return; }
+        if (file.type === 'image/png') {
+          resolve(file.name && /\.png$/i.test(file.name)
+            ? file
+            : new File([file], 'cover.png', { type: 'image/png' }));
+          return;
+        }
+        var url = URL.createObjectURL(file);
+        var img = new Image();
+        img.onload = function () {
+          var canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth || img.width;
+          canvas.height = img.naturalHeight || img.height;
+          if (!canvas.width || !canvas.height) {
+            URL.revokeObjectURL(url);
+            reject(new Error(t('cover_paste_bad')));
+            return;
+          }
+          try {
+            canvas.getContext('2d').drawImage(img, 0, 0);
+          } catch (e) {
+            URL.revokeObjectURL(url);
+            reject(e);
+            return;
+          }
+          canvas.toBlob(function (blob) {
+            URL.revokeObjectURL(url);
+            if (!blob) { reject(new Error(t('cover_paste_bad'))); return; }
+            resolve(new File([blob], 'cover.png', { type: 'image/png' }));
+          }, 'image/png');
+        };
+        img.onerror = function () {
+          URL.revokeObjectURL(url);
+          reject(new Error(t('cover_paste_bad')));
+        };
+        img.src = url;
+      });
+    }
+
+    async function stageCoverImageFile(file) {
+      if (coverBusy || !file) return;
+      coverStatus.textContent = t('cover_converting');
+      try {
+        var png = await imageFileToPng(file);
+        setPendingCover({ kind: 'file', file: png, previewUrl: URL.createObjectURL(png) });
+      } catch (e) {
+        errToast(e);
+        paintCoverPending();
+      }
+    }
+
     var fileIn = h('input', { type: 'file', accept: 'image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif', hidden: true });
     fileIn.addEventListener('change', function () {
       if (!fileIn.files || !fileIn.files[0]) return;
-      var fd = new FormData();
-      fd.append('file', fileIn.files[0]);
-      applyCover(fd, true);
+      stageCoverImageFile(fileIn.files[0]);
+      fileIn.value = '';
+    });
+    dlg.addEventListener('paste', function (e) {
+      if (tab !== 'cover' || coverBusy) return;
+      var items = e.clipboardData && e.clipboardData.items;
+      if (!items) return;
+      var imgItem = null;
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].type && items[i].type.indexOf('image/') === 0) {
+          imgItem = items[i];
+          break;
+        }
+      }
+      if (!imgItem) return;
+      e.preventDefault();
+      stageCoverImageFile(imgItem.getAsFile());
     });
     var coverGrid = h('div', { class: 'cover-grid' });
     (chapters || []).slice(0, 24).forEach(function (c) {
       var label = c.number >= 0 ? t('ch_short', { n: fmtNum(c.number) }) : (c.title || '—');
       var thumb = h('button', {
-        type: 'button', class: 'cover-cand', title: label,
+        type: 'button', class: 'cover-cand', title: label, 'data-id': c.id,
         onclick: function () {
           if (thumb.classList.contains('broken') || thumb.disabled) {
             toast(t('cover_chapter_bad'), 'err');
             return;
           }
-          applyCover({ chapterId: c.id });
+          setPendingCover({ kind: 'chapter', chapterId: c.id, label: label });
         }
       },
         h('img', { src: '/api/chapters/' + enc(c.id) + '/page/0', alt: '', loading: 'lazy', decoding: 'async' }),
@@ -1033,6 +1264,7 @@
       err.hidden = true;
       var body = { sourcePriority: clearCustom ? [] : srcOrder.map(function (s) { return s.name; }) };
       try {
+        await commitPendingCover();
         await api('/api/admin/series/' + enc(series.id), { method: 'PUT', json: body });
         toast(t('saved'));
         dlg.close();
@@ -1050,13 +1282,16 @@
       if (tab === 'cover') {
         fill(panel,
           coverStatus,
+          coverPreview,
           h('div', { class: 'row cover-actions' },
             h('button', { class: 'btn', type: 'button', onclick: function () { fileIn.click(); } }, icon('folder', 'xs'), t('cover_upload')),
-            h('button', { class: 'btn', type: 'button', onclick: function () { applyCover({ auto: true }); } }, icon('refresh', 'xs'), t('cover_auto'))),
+            h('button', { class: 'btn', type: 'button', onclick: function () { setPendingCover({ kind: 'auto' }); } }, icon('refresh', 'xs'), t('cover_auto'))),
           fileIn,
           (chapters || []).length ? h('h4', { class: 'lbl' }, t('cover_from_chapter')) : null,
           coverGrid);
-        fill(foot, h('button', { class: 'btn', type: 'button', onclick: function () { dlg.close(); } }, t('cancel')));
+        fill(foot,
+          h('button', { class: 'btn', type: 'button', onclick: function () { dlg.close(); } }, t('cancel')),
+          h('button', { class: 'btn primary', type: 'button', onclick: saveCover, disabled: !pendingCover }, t('save')));
         return;
       }
       if (tab === 'sources') {
@@ -1095,6 +1330,7 @@
           class: 'btn meta-unlock-btn', type: 'button',
           onclick: async function () {
             try {
+              await commitPendingCover();
               await api('/api/admin/series/' + enc(series.id), { method: 'PUT', json: { metaLocked: false } });
               toast(t('meta_unlocked'));
               dlg.close();
@@ -1111,7 +1347,11 @@
       h('div', { class: 'dlg-head' }, h('h3', { class: 'display' }, t('edit')), iconBtn('x', t('close'), function () { dlg.close(); })),
       h('div', { class: 'edit-layout' }, nav, panel),
       foot);
-    dlg.addEventListener('close', function () { dlg.remove(); });
+    dlg.addEventListener('close', function () {
+      revokePendingCoverUrl();
+      pendingCover = null;
+      dlg.remove();
+    });
     document.body.appendChild(dlg);
     dlg.showModal();
     paintPanel();
