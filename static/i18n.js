@@ -62,6 +62,9 @@
       zone_prev: 'Previous', zone_next: 'Next', zone_menu: 'Menu',
       first_chapter: 'This is the first chapter', last_chapter: 'You are up to date',
       end_of_chapter: 'End of chapter', end_of_series: 'You have reached the latest chapter',
+      scroll_for_next: 'Keep scrolling for the next chapter',
+      loading_next_chapter: 'Loading next chapter…',
+      next_chapter_failed: 'Could not load the next chapter',
       retry_page: 'Retry page', page_failed: 'Could not load this page', no_pages: 'This chapter has no readable pages',
 
       tab_libraries: 'Libraries', tab_users: 'Users', tab_settings: 'Settings', tab_jobs: 'Jobs',
@@ -153,6 +156,9 @@
       zone_prev: 'Précédent', zone_next: 'Suivant', zone_menu: 'Menu',
       first_chapter: 'C’est le premier chapitre', last_chapter: 'Vous êtes à jour',
       end_of_chapter: 'Fin du chapitre', end_of_series: 'Vous avez atteint le dernier chapitre',
+      scroll_for_next: 'Continuez de défiler pour le chapitre suivant',
+      loading_next_chapter: 'Chargement du chapitre suivant…',
+      next_chapter_failed: 'Impossible de charger le chapitre suivant',
       retry_page: 'Recharger la page', page_failed: 'Impossible de charger cette page', no_pages: 'Ce chapitre n’a aucune page lisible',
 
       tab_libraries: 'Bibliothèques', tab_users: 'Utilisateurs', tab_settings: 'Réglages', tab_jobs: 'Tâches',
